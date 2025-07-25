@@ -17,6 +17,8 @@
 - `lib/utils/timezone.ts` - Timezone conversion utilities.
 - `lib/utils/helpers.ts` - General utility functions.
 - `__tests__/` - Directory for unit and integration tests for all major modules/components.
+- `.env` - Environment variables for Supabase URL and anon key.
+- `.git/` - Git repository for version control.
 
 ### Notes
 
@@ -25,12 +27,12 @@
 
 ## Tasks
 
-- [ ] 1.0 Project Setup & Core Infrastructure
+- [x] 1.0 Project Setup & Core Infrastructure
   - [x] 1.1 Initialize Expo React Native project with TypeScript.
   - [x] 1.2 Set up Supabase project and configure database schema (users, feeds, content, digests, etc.).
-  - [ ] 1.3 Install and configure core dependencies (navigation, notifications, Supabase, etc.).
-  - [ ] 1.4 Set up environment variables and configuration files.
-  - [ ] 1.5 Set up version control and basic CI/CD pipeline.
+  - [x] 1.3 Install and configure core dependencies (navigation, notifications, Supabase, etc.).
+  - [x] 1.4 Set up environment variables and configuration files.
+  - [x] 1.5 Set up version control and basic CI/CD pipeline.
 
 - [ ] 2.0 User Authentication & Account Management
   - [ ] 2.1 Implement sign up, sign in, and sign out flows using Supabase Auth.

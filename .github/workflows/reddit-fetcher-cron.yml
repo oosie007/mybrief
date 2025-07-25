@@ -1,0 +1,14 @@
+name: Reddit Fetcher Cron
+
+on:
+  schedule:
+    - cron: '0 */3 * * *'  # Every 3 hours
+  workflow_dispatch:
+
+jobs:
+  call-edge-function:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Supabase Edge Function
+        run: |
+          curl -X POST https://dgfmvoxvnojfkhooqggq.functions.supabase.co/redditFetcher 

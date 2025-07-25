@@ -1,0 +1,14 @@
+name: Twitter Fetcher Cron
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'  # Every 4 hours
+  workflow_dispatch:
+
+jobs:
+  call-edge-function:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Supabase Edge Function
+        run: |
+          curl -X POST https://dgfmvoxvnojfkhooqggq.functions.supabase.co/twitterFetcher 
