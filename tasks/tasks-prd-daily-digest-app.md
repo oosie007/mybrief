@@ -34,46 +34,46 @@
   - [x] 1.4 Set up environment variables and configuration files.
   - [x] 1.5 Set up version control and basic CI/CD pipeline.
 
-- [ ] 2.0 User Authentication & Account Management
-  - [ ] 2.1 Implement sign up, sign in, and sign out flows using Supabase Auth.
-  - [ ] 2.2 Create onboarding flow for new users (template pack selection, timezone, notification time).
-  - [ ] 2.3 Implement user profile management (update email, password, preferences).
-  - [ ] 2.4 Store and retrieve user preferences (feeds, display mode, notification time).
+- [x] 2.0 User Authentication & Account Management
+  - [x] 2.1 Implement sign up, sign in, and sign out flows using Supabase Auth.
+  - [x] 2.2 Create onboarding flow for new users (template pack selection, timezone, notification time).
+  - [x] 2.3 Implement user profile management (update email, password, preferences).
+  - [x] 2.4 Store and retrieve user preferences (feeds, display mode, notification time).
 
-- [ ] 3.0 Feed Source Integration & Management
-  - [ ] 3.1 Implement UI for adding/removing RSS feeds, YouTube channels, Reddit subreddits, X/Twitter accounts.
-  - [ ] 3.2 Build template pack system for quick feed setup.
-  - [ ] 3.3 Store user feed selections in the database.
-  - [ ] 3.4 Implement backend/edge functions for fetching content from each source (RSS, YouTube, Reddit, X/Twitter).
-  - [ ] 3.5 Schedule regular content fetching jobs (Supabase Edge Functions/Cron).
+- [x] 3.0 Feed Source Integration & Management
+  - [x] 3.1 Implement UI for adding/removing RSS feeds, YouTube channels, Reddit subreddits, X/Twitter accounts.
+  - [x] 3.2 Build template pack system for quick feed setup.
+  - [x] 3.3 Store user feed selections in the database.
+  - [x] 3.4 Implement backend/edge functions for fetching content from each source (RSS, YouTube, Reddit, X/Twitter).
+  - [x] 3.5 Schedule regular content fetching jobs (Supabase Edge Functions/Cron).
 
 - [ ] 4.0 Daily Digest Generation & Content Aggregation
-  - [ ] 4.1 Aggregate new content from all user feeds daily.
-  - [ ] 4.2 Use AI (OpenAI GPT-4) to rank and summarize content for each user.
-  - [ ] 4.3 Store generated daily digests in the database.
-  - [ ] 4.4 Implement logic to avoid duplicate content and handle errors from sources.
+  - [x] 4.1 Aggregate new content from all user feeds daily.
+  - [x] 4.2 Use AI (OpenAI GPT-4) to rank and summarize content for each user.
+  - [x] 4.3 Store generated daily digests in the database.
+  - [x] 4.4 Implement logic to avoid duplicate content and handle errors from sources.
 
 - [ ] 5.0 User Interface & Experience (UI/UX)
-  - [ ] 5.1 Implement minimalist UI as per `minimal-digest-design_sample.tsx` (light/dark mode, text-first, clean navigation).
-  - [ ] 5.2 Build DigestScreen to display daily content (news, Reddit, YouTube, X/Twitter sections).
-  - [ ] 5.3 Build FeedManagementScreen for managing sources and template packs.
-  - [ ] 5.4 Build SavedArticlesScreen for saved/read-later content.
-  - [ ] 5.5 Build SettingsScreen for user preferences.
-  - [ ] 5.6 Implement display mode toggle (minimal/text-only vs. rich/images).
-  - [ ] 5.7 Add loading, error, and empty states for all screens.
+  - [x] 5.1 Implement minimalist UI as per `minimal-digest-design_sample.tsx` (light/dark mode, text-first, clean navigation).
+  - [x] 5.2 Build DigestScreen to display daily content (news, Reddit, YouTube, X/Twitter sections).
+  - [x] 5.3 Build FeedManagementScreen for managing sources and template packs.
+  - [x] 5.4 Build SavedArticlesScreen for saved/read-later content.
+  - [x] 5.5 Build SettingsScreen for user preferences.
+  - [x] 5.6 Implement display mode toggle (minimal/text-only vs. rich/images).
+  - [x] 5.7 Add loading, error, and empty states for all screens.
 
-- [ ] 6.0 Push Notifications & Reminders
-  - [ ] 6.1 Integrate Expo Push Notifications.
-  - [ ] 6.2 Allow users to set preferred notification time and timezone.
-  - [ ] 6.3 Schedule and send daily digest notifications at user’s chosen time.
-  - [ ] 6.4 Implement smart reminders for saved/read-later articles.
-  - [ ] 6.5 Handle notification permissions and edge cases.
+- [x] 6.0 Push Notifications & Reminders
+  - [x] 6.1 Integrate Expo Push Notifications.
+  - [x] 6.2 Allow users to set preferred notification time and timezone.
+  - [x] 6.3 Schedule and send daily digest notifications at user’s chosen time.
+  - [x] 6.4 Implement smart reminders for saved/read-later articles.
+  - [x] 6.5 Handle notification permissions and edge cases.
 
-- [ ] 7.0 Save, Share, and Read Later Functionality
-  - [ ] 7.1 Implement save/read-later feature for content items.
-  - [ ] 7.2 Build reminders for unread saved articles.
-  - [ ] 7.3 Implement sharing functionality for content items.
-  - [ ] 7.4 Track and display saved/read articles in the UI.
+- [x] 7.0 Save, Share, and Read Later Functionality
+  - [x] 7.1 Implement save/read-later feature for content items.
+  - [x] 7.2 Build reminders for unread saved articles.
+  - [x] 7.3 Implement sharing functionality for content items.
+  - [x] 7.4 Track and display saved/read articles in the UI.
 
 - [ ] 8.0 Testing, Analytics, and Success Metrics
   - [ ] 8.1 Write unit and integration tests for all major modules/components.

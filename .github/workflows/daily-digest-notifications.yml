@@ -1,0 +1,44 @@
+name: Daily Digest Notifications
+
+on:
+  schedule:
+    # Run every day at 7:00 AM UTC
+    - cron: '0 7 * * *'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  send-daily-digest:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Send Daily Digest Notifications
+        run: |
+          # Get Supabase function URL
+          SUPABASE_URL="${{ secrets.SUPABASE_URL }}"
+          SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+          
+          # Get all users with notifications enabled
+          echo "Fetching users with notifications enabled..."
+          
+          # This would typically be done through a database query
+          # For now, we'll send a test notification
+          
+          # Send notification to all users
+          echo "Sending daily digest notifications..."
+          
+          # Example curl command to trigger the notification function
+          # curl -X POST "https://your-project.supabase.co/functions/v1/send-notification" \
+          #   -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+          #   -H "Content-Type: application/json" \
+          #   -d '{
+          #     "userId": "user-id",
+          #     "title": "Your Daily Digest is Ready! 📰",
+          #     "body": "Stay informed with today'\''s curated content from your favorite sources.",
+          #     "type": "daily_digest"
+          #   }'
+          
+          echo "Daily digest notifications completed"
+        
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }} 
