@@ -1,11 +1,60 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js'
-import RSSParser from 'https://esm.sh/rss-parser'
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL') || '',
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 )
+
+interface RSSItem {
+  title: string
+  link: string
+  contentSnippet: string
+  summary: string
+  pubDate: string
+  enclosure: { url: string } | null
+}
+
+// Simple RSS parser using Deno's fetch API
+async function parseRSS(url: string): Promise<{ items: RSSItem[] }> {
+  try {
+    const response = await fetch(url)
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+    const text = await response.text()
+    
+    // Simple XML parsing for RSS using regex (more reliable in Deno)
+    const items: RSSItem[] = []
+    
+    // Extract items using regex
+    const itemRegex = /<item[^>]*>([\s\S]*?)<\/item>/gi
+    let match
+    
+    while ((match = itemRegex.exec(text)) !== null) {
+      const itemContent = match[1]
+      
+      const title = itemContent.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || 'Untitled'
+      const link = itemContent.match(/<link[^>]*>([^<]*)<\/link>/i)?.[1] || ''
+      const description = itemContent.match(/<description[^>]*>([^<]*)<\/description>/i)?.[1] || ''
+      const pubDate = itemContent.match(/<pubDate[^>]*>([^<]*)<\/pubDate>/i)?.[1] || ''
+      
+      items.push({
+        title: title.trim(),
+        link: link.trim(),
+        contentSnippet: description.trim(),
+        summary: description.trim(),
+        pubDate,
+        enclosure: null
+      })
+    }
+    
+    return { items }
+  } catch (error) {
+    console.error(`Error fetching RSS from ${url}:`, error)
+    throw error
+  }
+}
 
 serve(async (req) => {
   try {
@@ -36,14 +85,13 @@ serve(async (req) => {
     }
 
     // 2. For each feed, fetch and parse RSS
-    const parser = new RSSParser()
     let totalProcessed = 0
     let totalNewItems = 0
 
     for (const feed of feeds) {
       try {
         console.log(`Processing feed: ${feed.name} (${feed.url})`)
-        const content = await parser.parseURL(feed.url)
+        const content = await parseRSS(feed.url)
         
         for (const item of content.items) {
           try {
