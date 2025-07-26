@@ -13,4 +13,4 @@ jobs:
         run: |
           curl -X POST https://dgfmvoxvnojfkhooqggq.functions.supabase.co/rssFetcher \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "Content-Type: application/json" 
+            -H "Content-Type: application/json"
