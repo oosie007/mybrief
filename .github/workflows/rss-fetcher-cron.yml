@@ -11,6 +11,6 @@ jobs:
     steps:
       - name: Call Supabase Edge Function
         run: |
-          curl -X POST https://dgfmvoxvnojfkhooqggq.functions.supabase.co/rssFetcher \
+          curl -X POST https://dgfmvoxvnojfkhooqggq.supabase.co/functions/v1/rssFetcher \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Content-Type: application/json" 

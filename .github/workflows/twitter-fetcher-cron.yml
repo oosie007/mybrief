@@ -11,6 +11,6 @@ jobs:
     steps:
       - name: Call Supabase Edge Function
         run: |
-          curl -X POST https://dgfmvoxvnojfkhooqggq.functions.supabase.co/twitterFetcher \
+          curl -X POST https://dgfmvoxvnojfkhooqggq.supabase.co/functions/v1/twitterFetcher \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Content-Type: application/json" 

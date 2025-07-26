@@ -1,0 +1,87 @@
+name: RSS Fetcher Direct
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'  # Every 2 hours
+  workflow_dispatch:
+
+jobs:
+  fetch-rss-feeds:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: |
+          npm install axios rss-parser
+
+      - name: Fetch RSS feeds and store in Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node -e "
+          const axios = require('axios');
+          const RSSParser = require('rss-parser');
+          
+          const supabaseUrl = process.env.SUPABASE_URL;
+          const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+          
+          const supabase = axios.create({
+            baseURL: supabaseUrl + '/rest/v1',
+            headers: {
+              'apikey': supabaseKey,
+              'Authorization': 'Bearer ' + supabaseKey,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          const parser = new RSSParser();
+          
+          const feeds = [
+            { name: 'TechCrunch', url: 'https://techcrunch.com/feed/' },
+            { name: 'The Verge', url: 'https://www.theverge.com/rss/index.xml' },
+            { name: 'Wired', url: 'https://www.wired.com/feed/rss' }
+          ];
+          
+          async function fetchAndStore() {
+            console.log('Starting RSS fetch...');
+            
+            for (const feed of feeds) {
+              try {
+                console.log(`Processing ${feed.name}...`);
+                const content = await parser.parseURL(feed.url);
+                
+                for (const item of content.items.slice(0, 5)) {
+                  try {
+                    await supabase.post('/content_items', {
+                      feed_source_id: feed.name,
+                      title: item.title || 'Untitled',
+                      url: item.link || '',
+                      description: item.contentSnippet || item.summary || '',
+                      image_url: item.enclosure?.url || null,
+                      published_at: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
+                      content_type: 'article',
+                      raw_content: item
+                    });
+                    console.log(`Stored: ${item.title}`);
+                  } catch (error) {
+                    console.log(`Error storing item: ${error.message}`);
+                  }
+                }
+              } catch (error) {
+                console.log(`Error processing ${feed.name}: ${error.message}`);
+              }
+            }
+            
+            console.log('RSS fetch completed!');
+          }
+          
+          fetchAndStore().catch(console.error);
+          " 
