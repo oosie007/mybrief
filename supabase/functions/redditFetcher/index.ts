@@ -1,37 +1,32 @@
-// Deno Edge Function: Fetch Reddit posts and store new content
-// This is a scaffold for a Supabase Edge Function (Deno)
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from 'https://esm.sh/@supabase/supabase-js'
 
-// import { createClient } from 'https://esm.sh/@supabase/supabase-js';
-// const supabase = createClient(DENO_SUPABASE_URL, DENO_SUPABASE_SERVICE_ROLE_KEY);
+const supabase = createClient(
+  Deno.env.get('SUPABASE_URL') || '',
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+)
 
-export default async function handler(req: Request) {
-  // 1. Get all active Reddit feed sources
-  // const { data: feeds, error } = await supabase
-  //   .from('feed_sources')
-  //   .select('*')
-  //   .eq('type', 'reddit');
-
-  // if (error) return new Response('Error fetching feeds', { status: 500 });
-
-  // 2. For each feed, fetch Reddit posts (e.g., /r/subreddit/hot.json)
-  // for (const feed of feeds) {
-  //   const response = await fetch(`https://www.reddit.com/${feed.url}/hot.json?limit=20`);
-  //   const data = await response.json();
-  //   for (const post of data.data.children) {
-  //     const item = post.data;
-  //     // 3. Insert new content into content_items (deduplicate by url)
-  //     await supabase.from('content_items').upsert({
-  //       feed_source_id: feed.id,
-  //       title: item.title,
-  //       url: `https://reddit.com${item.permalink}`,
-  //       description: item.selftext || '',
-  //       image_url: item.thumbnail && item.thumbnail.startsWith('http') ? item.thumbnail : null,
-  //       published_at: new Date(item.created_utc * 1000).toISOString(),
-  //       content_type: 'reddit',
-  //       raw_content: item,
-  //     }, { onConflict: 'url' });
-  //   }
-  // }
-
-  // return new Response('Reddit fetch complete', { status: 200 });
-} 
+serve(async (req) => {
+  try {
+    console.log('Reddit Fetcher started')
+    
+    // TODO: Implement Reddit API fetching
+    // This would use Reddit's API to fetch posts from specified subreddits
+    
+    return new Response(JSON.stringify({ 
+      message: 'Reddit fetch complete',
+      processed: 0,
+      newItems: 0
+    }), { 
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    })
+    
+  } catch (error) {
+    console.error('Reddit Fetcher error:', error)
+    return new Response(JSON.stringify({ error: 'Internal server error' }), { 
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+}) 
