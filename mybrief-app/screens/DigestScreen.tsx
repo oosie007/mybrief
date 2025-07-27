@@ -23,6 +23,7 @@ import { aggregateUserContent, debugContent } from '../lib/digestGenerator';
 import { getFeedSourceFavicon } from '../lib/faviconService';
 import ArticleViewer from '../components/ArticleViewer';
 import { savedArticlesService } from '../lib/savedArticlesService';
+import { cleanContentForDisplay, cleanTitle } from '../lib/contentCleaner';
 
 interface ContentItem {
   id: string;
@@ -564,11 +565,11 @@ const DigestScreen = ({ navigation }: any) => {
           ]} 
           numberOfLines={3}
         >
-          {item.title}
+          {cleanTitle(item.title)}
         </Text>
         
         <Text style={[styles.cardSummary, { color: theme.textSecondary }]} numberOfLines={2}>
-          {item.summary}
+          {cleanContentForDisplay(item.summary)}
         </Text>
 
         <View style={styles.cardFooter}>

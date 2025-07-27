@@ -11,6 +11,8 @@ interface RSSItem {
   link: string
   contentSnippet: string
   summary: string
+  cleanedContentSnippet: string
+  cleanedSummary: string
   pubDate: string
   enclosure: { url: string } | null
   author?: string
@@ -56,6 +58,33 @@ async function parseRSS(url: string): Promise<{ items: RSSItem[] }> {
       const contentSnippet = descriptionMatch ? descriptionMatch[1].trim() : ''
       const summary = contentMatch ? contentMatch[1].trim() : (summaryMatch ? summaryMatch[1].trim() : contentSnippet)
       
+      // Clean HTML content
+      const cleanContent = (text: string): string => {
+        if (!text) return '';
+        
+        // Decode HTML entities
+        let cleaned = text
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&amp;/g, '&')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&apos;/g, "'")
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&hellip;/g, '...');
+        
+        // Remove HTML tags
+        cleaned = cleaned.replace(/<[^>]*>/g, '');
+        
+        // Remove extra whitespace
+        cleaned = cleaned.replace(/\s+/g, ' ').trim();
+        
+        return cleaned;
+      };
+      
+      const cleanedContentSnippet = cleanContent(contentSnippet);
+      const cleanedSummary = cleanContent(summary);
+      
       // Extract publication date
       const pubDateMatch = itemXml.match(/<pubDate[^>]*>([^<]+)<\/pubDate>/i)
       const pubDate = pubDateMatch ? pubDateMatch[1].trim() : ''
@@ -79,6 +108,8 @@ async function parseRSS(url: string): Promise<{ items: RSSItem[] }> {
           link,
           contentSnippet,
           summary,
+          cleanedContentSnippet,
+          cleanedSummary,
           pubDate,
           enclosure,
           author
@@ -145,7 +176,7 @@ serve(async (req) => {
                 feed_source_id: feed.id,
                 title: item.title || 'Untitled',
                 url: item.link || '',
-                description: item.contentSnippet || item.summary || '',
+                description: item.cleanedContentSnippet || item.cleanedSummary || '',
                 image_url: item.enclosure?.url || null,
                 published_at: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
                 content_type: 'article',

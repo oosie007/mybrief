@@ -19,6 +19,7 @@ import { LoadingState, ErrorState, NoSavedArticlesState, SearchEmptyState } from
 import { getFeedSourceFavicon } from '../lib/faviconService';
 import ArticleViewer from '../components/ArticleViewer';
 import { savedArticlesService, SavedArticle } from '../lib/savedArticlesService';
+import { cleanContentForDisplay, cleanTitle } from '../lib/contentCleaner';
 
 const SavedArticlesScreen = ({ navigation }: any) => {
   const { theme, isDarkMode } = useTheme();
@@ -286,11 +287,11 @@ const SavedArticlesScreen = ({ navigation }: any) => {
           ]} 
           numberOfLines={3}
         >
-          {article.content_data?.title || ''}
+          {cleanTitle(article.content_data?.title || '')}
         </Text>
 
         <Text style={[styles.cardSummary, { color: theme.textSecondary }]} numberOfLines={2}>
-          {article.content_data?.description || ''}
+          {cleanContentForDisplay(article.content_data?.description || '')}
         </Text>
 
         <View style={styles.cardFooter}>
