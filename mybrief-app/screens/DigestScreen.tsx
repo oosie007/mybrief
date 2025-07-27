@@ -39,6 +39,14 @@ interface ContentItem {
     type: string;
   };
   published_at?: string; // Added for filtering
+  author?: string; // Added for RSS content
+  // Reddit-specific fields
+  score?: number;
+  num_comments?: number;
+  subreddit?: string;
+  permalink?: string;
+  is_self?: boolean;
+  domain?: string;
 }
 
 const DigestScreen = ({ navigation }: any) => {
@@ -63,7 +71,7 @@ const DigestScreen = ({ navigation }: any) => {
   const filtersAnimation = useRef(new Animated.Value(0)).current;
   const searchAnimation = useRef(new Animated.Value(0)).current;
 
-  const categories = ['All', 'Technology', 'Business', 'Startups', 'Productivity', 'News'];
+  const categories = ['All', 'Technology', 'Business', 'Startups', 'Productivity', 'News', 'Social'];
 
   const toggleFilters = () => {
     const toValue = filtersVisible ? 0 : 1;
@@ -368,23 +376,22 @@ const DigestScreen = ({ navigation }: any) => {
             newSet.delete(article.id);
             return newSet;
           });
-          Alert.alert('Article Removed', 'Article removed from saved items');
+          // Removed alert for unsaving
         } else {
-          Alert.alert('Error', 'Failed to remove article from saved items');
+          console.error('Failed to remove article from saved items');
         }
       } else {
         // Save the article
         const success = await savedArticlesService.saveArticle(article.id);
         if (success) {
           setSavedArticles(prev => new Set([...prev, article.id]));
-          Alert.alert('Article Saved', 'Article added to saved items');
+          // Removed alert for saving
         } else {
-          Alert.alert('Error', 'Failed to save article');
+          console.error('Failed to save article');
         }
       }
     } catch (error) {
       console.error('Error handling save/unsave:', error);
-      Alert.alert('Error', 'Failed to save/unsave article');
     }
   };
 
@@ -521,9 +528,6 @@ const DigestScreen = ({ navigation }: any) => {
             <Text style={[styles.sourceText, { color: theme.textSecondary }]}>
               {item.feed_sources?.name || 'Unknown'}
             </Text>
-            <Text style={[styles.timeText, { color: theme.textMuted }]}>
-              {formattedDate || 'Just now'}
-            </Text>
             {isRead && (
               <View style={styles.readIndicator}>
                 <Ionicons name="checkmark-circle" size={12} color={theme.accent} />
@@ -568,17 +572,42 @@ const DigestScreen = ({ navigation }: any) => {
         </Text>
 
         <View style={styles.cardFooter}>
-          <View style={styles.decorativeDots}>
-            <View style={[styles.dot, { backgroundColor: theme.divider }]} />
-            <View style={[styles.dot, { backgroundColor: theme.divider }]} />
-            <View style={[styles.dot, { backgroundColor: theme.divider }]} />
+          {/* Author/Reddit Metrics on the left */}
+          <View style={styles.footerLeft}>
+            {item.content_type !== 'reddit' ? (
+              <Text style={[styles.authorText, { color: theme.textMuted }]}>
+                {item.author || 'Unknown Author'}
+              </Text>
+            ) : (
+              <View style={styles.redditMetrics}>
+                <View style={styles.redditMetric}>
+                  <Ionicons name="arrow-up" size={12} color={theme.textMuted} />
+                  <Text style={[styles.redditMetricText, { color: theme.textMuted }]}>
+                    {item.score || 0}
+                  </Text>
+                </View>
+                <View style={styles.redditMetric}>
+                  <Ionicons name="chatbubble-outline" size={12} color={theme.textMuted} />
+                  <Text style={[styles.redditMetricText, { color: theme.textMuted }]}>
+                    {item.num_comments || 0}
+                  </Text>
+                </View>
+              </View>
+            )}
           </View>
-          <TouchableOpacity 
-            style={styles.shareButton} 
-            onPress={() => handleShareArticle(item)}
-          >
-            <Ionicons name="share-outline" size={14} color={theme.textSecondary} />
-          </TouchableOpacity>
+          
+          {/* Published Date on the right */}
+          <View style={styles.footerRight}>
+            <Text style={[styles.publishedText, { color: theme.textMuted }]}>
+              {item.published_at ? new Date(item.published_at).toLocaleString('en-US', { 
+                month: 'short', 
+                day: 'numeric', 
+                hour: 'numeric', 
+                minute: '2-digit', 
+                hour12: true 
+              }) : 'Unknown Date'}
+            </Text>
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -613,7 +642,7 @@ const DigestScreen = ({ navigation }: any) => {
   const getContentItems = () => {
     if (!digest?.content_items) return [];
 
-    return digest.content_items
+    const allItems = digest.content_items
       .map((digestItem: any) => {
         if (digestItem.content_data) {
           const contentItem: ContentItem = {
@@ -630,7 +659,15 @@ const DigestScreen = ({ navigation }: any) => {
               name: 'Unknown',
               type: 'rss'
             },
-            published_at: (digestItem as any).content_data.published_at || ''
+            published_at: (digestItem as any).content_data.published_at || '',
+            // Add Reddit-specific fields if they exist in the mock data
+            score: (digestItem.content_data as any).score || 0,
+            num_comments: (digestItem.content_data as any).num_comments || 0,
+            author: (digestItem.content_data as any).author || '',
+            subreddit: (digestItem.content_data as any).subreddit || '',
+            permalink: (digestItem.content_data as any).permalink || '',
+            is_self: (digestItem.content_data as any).is_self || false,
+            domain: (digestItem.content_data as any).domain || ''
           };
           
           console.log('Content item with published_at:', {
@@ -640,8 +677,22 @@ const DigestScreen = ({ navigation }: any) => {
           });
           
           // Filter by category if not "All"
-          if (activeCategory !== 'All' && contentItem.category !== activeCategory) {
-            return null;
+          if (activeCategory !== 'All') {
+            if (activeCategory === 'Social') {
+              // Show only social content (Reddit, Twitter, etc.)
+              if (!['reddit', 'twitter', 'social'].includes(contentItem.content_type)) {
+                return null;
+              }
+            } else {
+              // Show only non-social content for other categories
+              if (['reddit', 'twitter', 'social'].includes(contentItem.content_type)) {
+                return null;
+              }
+              // Also check the category field for RSS content
+              if (contentItem.category !== activeCategory) {
+                return null;
+              }
+            }
           }
           
           // Filter by search query
@@ -656,9 +707,33 @@ const DigestScreen = ({ navigation }: any) => {
         return null;
       })
       .filter(Boolean) as ContentItem[];
+
+    return allItems;
   };
 
-  const filteredContent = getContentItems();
+  // Separate content by type
+  const getContentByType = () => {
+    const allItems = getContentItems();
+    
+    const newsArticles = allItems.filter(item => 
+      item.content_type === 'rss' || 
+      item.content_type === 'article' || 
+      item.content_type === 'news'
+    );
+    
+    const socialPosts = allItems.filter(item => 
+      item.content_type === 'reddit' || 
+      item.content_type === 'twitter' ||
+      item.content_type === 'social'
+    ).sort((a, b) => (b.score || 0) - (a.score || 0)); // Sort by upvotes descending
+    
+    return {
+      newsArticles,
+      socialPosts
+    };
+  };
+
+  const { newsArticles, socialPosts } = getContentByType();
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -787,19 +862,48 @@ const DigestScreen = ({ navigation }: any) => {
       >
         {digest ? (
           <>
-            {/* Section Header */}
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>News & Articles</Text>
-              <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
-                {filteredContent.length} article{filteredContent.length !== 1 ? 's' : ''} for today
-              </Text>
-            </View>
+            {/* News & Articles Section */}
+            {newsArticles.length > 0 && (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, { color: theme.text }]}>News & Articles</Text>
+                  <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
+                    {newsArticles.length} article{newsArticles.length !== 1 ? 's' : ''} for today
+                  </Text>
+                </View>
 
-            {filteredContent.length > 0 ? (
-              filteredContent.map((item: any, index: number) => (
-                <ContentCard key={item.id || index} item={item} />
-              ))
-            ) : (
+                {newsArticles.map((item: any, index: number) => (
+                  <ContentCard key={item.id || index} item={item} />
+                ))}
+                
+                <View style={styles.sectionDivider}>
+                  <View style={[styles.dividerLine, { backgroundColor: theme.divider }]} />
+                </View>
+              </>
+            )}
+
+            {/* Social Section */}
+            {socialPosts.length > 0 && (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, { color: theme.text }]}>Social</Text>
+                  <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
+                    {socialPosts.length} post{socialPosts.length !== 1 ? 's' : ''} from communities
+                  </Text>
+                </View>
+
+                {socialPosts.map((item: any, index: number) => (
+                  <ContentCard key={item.id || index} item={item} />
+                ))}
+                
+                <View style={styles.sectionDivider}>
+                  <View style={[styles.dividerLine, { backgroundColor: theme.divider }]} />
+                </View>
+              </>
+            )}
+
+            {/* Empty State */}
+            {newsArticles.length === 0 && socialPosts.length === 0 && (
               <View style={styles.emptyState}>
                 <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
                   No content available for {activeCategory}
@@ -977,9 +1081,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     marginRight: 8,
   },
-  timeText: {
-    fontSize: 11,
-  },
+
   cardActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1007,9 +1109,8 @@ const styles = StyleSheet.create({
   },
   cardFooter: {
     flexDirection: 'row',
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 12,
   },
   categoryTag: {
     paddingHorizontal: 8,
@@ -1023,16 +1124,7 @@ const styles = StyleSheet.create({
   readTime: {
     fontSize: 11,
   },
-  decorativeDots: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  dot: {
-    width: 20,
-    height: 4,
-    borderRadius: 2,
-  },
+
   shareButton: {
     padding: 4,
   },
@@ -1105,6 +1197,10 @@ const styles = StyleSheet.create({
   sectionSubtitle: {
     fontSize: 14,
   },
+  sectionDivider: {
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
   searchContainer: {
     paddingHorizontal: 16,
     paddingBottom: 8, // Reduced from 12
@@ -1124,6 +1220,33 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     paddingVertical: 0,
+  },
+  redditMetrics: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  redditMetric: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  redditMetricText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  footerLeft: {
+    flex: 1,
+    alignItems: 'flex-start',
+  },
+  footerRight: {
+    alignItems: 'flex-end',
+  },
+  authorText: {
+    fontSize: 11,
+  },
+  publishedText: {
+    fontSize: 11,
   },
 });
 

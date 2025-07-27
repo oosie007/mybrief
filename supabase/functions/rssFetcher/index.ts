@@ -13,42 +13,80 @@ interface RSSItem {
   summary: string
   pubDate: string
   enclosure: { url: string } | null
+  author?: string
+  dcCreator?: string
+  itunesAuthor?: string
 }
 
-// Simple RSS parser using Deno's fetch API
 async function parseRSS(url: string): Promise<{ items: RSSItem[] }> {
   try {
+    console.log(`Fetching RSS from: ${url}`)
     const response = await fetch(url)
+    
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
     }
-    const text = await response.text()
     
-    // Simple XML parsing for RSS using regex (more reliable in Deno)
+    const xmlText = await response.text()
+    console.log(`Received ${xmlText.length} characters of XML`)
+    
+    // Parse the XML to extract RSS items
     const items: RSSItem[] = []
     
-    // Extract items using regex
-    const itemRegex = /<item[^>]*>([\s\S]*?)<\/item>/gi
-    let match
+    // Extract items using regex patterns
+    const itemPattern = /<item[^>]*>([\s\S]*?)<\/item>/gi
+    let itemMatch
     
-    while ((match = itemRegex.exec(text)) !== null) {
-      const itemContent = match[1]
+    while ((itemMatch = itemPattern.exec(xmlText)) !== null) {
+      const itemXml = itemMatch[1]
       
-      const title = itemContent.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || 'Untitled'
-      const link = itemContent.match(/<link[^>]*>([^<]*)<\/link>/i)?.[1] || ''
-      const description = itemContent.match(/<description[^>]*>([^<]*)<\/description>/i)?.[1] || ''
-      const pubDate = itemContent.match(/<pubDate[^>]*>([^<]*)<\/pubDate>/i)?.[1] || ''
+      // Extract title
+      const titleMatch = itemXml.match(/<title[^>]*>([^<]+)<\/title>/i)
+      const title = titleMatch ? titleMatch[1].trim() : ''
       
-      items.push({
-        title: title.trim(),
-        link: link.trim(),
-        contentSnippet: description.trim(),
-        summary: description.trim(),
-        pubDate,
-        enclosure: null
-      })
+      // Extract link
+      const linkMatch = itemXml.match(/<link[^>]*>([^<]+)<\/link>/i)
+      const link = linkMatch ? linkMatch[1].trim() : ''
+      
+      // Extract description/content
+      const descriptionMatch = itemXml.match(/<description[^>]*>([\s\S]*?)<\/description>/i)
+      const contentMatch = itemXml.match(/<content:encoded[^>]*>([\s\S]*?)<\/content:encoded>/i)
+      const summaryMatch = itemXml.match(/<summary[^>]*>([\s\S]*?)<\/summary>/i)
+      
+      const contentSnippet = descriptionMatch ? descriptionMatch[1].trim() : ''
+      const summary = contentMatch ? contentMatch[1].trim() : (summaryMatch ? summaryMatch[1].trim() : contentSnippet)
+      
+      // Extract publication date
+      const pubDateMatch = itemXml.match(/<pubDate[^>]*>([^<]+)<\/pubDate>/i)
+      const pubDate = pubDateMatch ? pubDateMatch[1].trim() : ''
+      
+      // Extract author information (try multiple common RSS author fields)
+      const authorMatch = itemXml.match(/<author[^>]*>([^<]+)<\/author>/i)
+      const dcCreatorMatch = itemXml.match(/<dc:creator[^>]*>([^<]+)<\/dc:creator>/i)
+      const itunesAuthorMatch = itemXml.match(/<itunes:author[^>]*>([^<]+)<\/itunes:author>/i)
+      
+      const author = authorMatch ? authorMatch[1].trim() : 
+                    dcCreatorMatch ? dcCreatorMatch[1].trim() : 
+                    itunesAuthorMatch ? itunesAuthorMatch[1].trim() : ''
+      
+      // Extract enclosure (image)
+      const enclosureMatch = itemXml.match(/<enclosure[^>]*url="([^"]+)"[^>]*>/i)
+      const enclosure = enclosureMatch ? { url: enclosureMatch[1] } : null
+      
+      if (title && link) {
+        items.push({
+          title,
+          link,
+          contentSnippet,
+          summary,
+          pubDate,
+          enclosure,
+          author
+        })
+      }
     }
     
+    console.log(`Parsed ${items.length} items from RSS feed`)
     return { items }
   } catch (error) {
     console.error(`Error fetching RSS from ${url}:`, error)
@@ -95,6 +133,11 @@ serve(async (req) => {
         
         for (const item of content.items) {
           try {
+            // Log author information for debugging
+            if (item.author) {
+              console.log(`Found author for "${item.title}": ${item.author}`)
+            }
+            
             // 3. Insert new content into content_items (deduplicate by url)
             const { error: insertError } = await supabase
               .from('content_items')
@@ -107,6 +150,7 @@ serve(async (req) => {
                 published_at: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
                 content_type: 'article',
                 raw_content: item,
+                author: item.author || null,
               }, { onConflict: 'url' })
 
             if (insertError) {

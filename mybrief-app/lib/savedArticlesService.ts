@@ -7,7 +7,27 @@ export interface SavedArticle {
   saved_at: string;
   read_at?: string | null;
   reminder_shown_at?: string | null;
-  content_data?: any; // Will include the full content item data
+  content_data?: {
+    id: string;
+    title: string;
+    url: string;
+    description: string;
+    image_url?: string;
+    published_at: string;
+    content_type: string;
+    feed_sources?: {
+      name: string;
+      type: string;
+    };
+    // Reddit-specific fields
+    score?: number;
+    num_comments?: number;
+    author?: string;
+    subreddit?: string;
+    permalink?: string;
+    is_self?: boolean;
+    domain?: string;
+  };
 }
 
 export const savedArticlesService = {
@@ -187,11 +207,30 @@ export const savedArticlesService = {
         return [];
       }
 
-      const { data, error } = await supabase
+      const { data: savedArticles, error } = await supabase
         .from('saved_articles')
         .select(`
           *,
-          content_data:content_items(*)
+          content_items (
+            id,
+            title,
+            url,
+            description,
+            image_url,
+            published_at,
+            content_type,
+            feed_sources (
+              name,
+              type
+            ),
+            author,
+            score,
+            num_comments,
+            subreddit,
+            permalink,
+            is_self,
+            domain
+          )
         `)
         .eq('user_id', user.id)
         .order('saved_at', { ascending: false });
@@ -201,8 +240,8 @@ export const savedArticlesService = {
         return [];
       }
 
-      console.log('Fetched saved articles:', data?.length || 0);
-      return data || [];
+      console.log('Fetched saved articles:', savedArticles?.length || 0);
+      return savedArticles || [];
     } catch (error) {
       console.error('Error in getSavedArticles:', error);
       return [];

@@ -13,6 +13,14 @@ export interface ContentItem {
     name: string;
     type: string;
   };
+  // Reddit-specific fields
+  score?: number;
+  num_comments?: number;
+  author?: string;
+  subreddit?: string;
+  permalink?: string;
+  is_self?: boolean;
+  domain?: string;
 }
 
 export interface UserDigest {
@@ -120,7 +128,14 @@ export async function aggregateUserContent(
         feed_sources (
           name,
           type
-        )
+        ),
+        author,
+        score,
+        num_comments,
+        subreddit,
+        permalink,
+        is_self,
+        domain
       `)
       .in('feed_source_id', feedSourceIds)
       .gte('published_at', startDate.toISOString())
@@ -157,7 +172,14 @@ export async function aggregateUserContent(
       feed_sources: {
         name: (item.feed_sources as any)?.name || 'Unknown',
         type: (item.feed_sources as any)?.type || 'rss'
-      }
+      },
+      author: item.author,
+      score: item.score,
+      num_comments: item.num_comments,
+      subreddit: item.subreddit,
+      permalink: item.permalink,
+      is_self: item.is_self,
+      domain: item.domain
     }));
 
     // Apply article limits based on user configuration
@@ -233,7 +255,14 @@ export async function getUndigestedContent(userId: string): Promise<ContentItem[
         feed_sources (
           name,
           type
-        )
+        ),
+        author,
+        score,
+        num_comments,
+        subreddit,
+        permalink,
+        is_self,
+        domain
       `)
       .in('feed_source_id', feedSourceIds)
       .not('id', 'in', `(

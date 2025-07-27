@@ -98,16 +98,65 @@ export const getFeedSourceFavicon = (sourceName: string, sourceUrl?: string): st
     'Bloomberg': 'https://www.google.com/s2/favicons?domain=bloomberg.com&sz=32',
   };
 
-  // Check if we have a known source
+  // Reddit subreddit favicons
+  const redditSubreddits: { [key: string]: string } = {
+    'r/technology': 'https://www.google.com/s2/favicons?domain=reddit.com/r/technology&sz=32',
+    'r/programming': 'https://www.google.com/s2/favicons?domain=reddit.com/r/programming&sz=32',
+    'r/webdev': 'https://www.google.com/s2/favicons?domain=reddit.com/r/webdev&sz=32',
+    'r/javascript': 'https://www.google.com/s2/favicons?domain=reddit.com/r/javascript&sz=32',
+    'r/reactjs': 'https://www.google.com/s2/favicons?domain=reddit.com/r/reactjs&sz=32',
+    'r/node': 'https://www.google.com/s2/favicons?domain=reddit.com/r/node&sz=32',
+    'r/Python': 'https://www.google.com/s2/favicons?domain=reddit.com/r/Python&sz=32',
+    'r/aws': 'https://www.google.com/s2/favicons?domain=reddit.com/r/aws&sz=32',
+    'r/docker': 'https://www.google.com/s2/favicons?domain=reddit.com/r/docker&sz=32',
+    'r/kubernetes': 'https://www.google.com/s2/favicons?domain=reddit.com/r/kubernetes&sz=32',
+    'r/startups': 'https://www.google.com/s2/favicons?domain=reddit.com/r/startups&sz=32',
+    'r/entrepreneur': 'https://www.google.com/s2/favicons?domain=reddit.com/r/entrepreneur&sz=32',
+    'r/business': 'https://www.google.com/s2/favicons?domain=reddit.com/r/business&sz=32',
+    'r/investing': 'https://www.google.com/s2/favicons?domain=reddit.com/r/investing&sz=32',
+    'r/finance': 'https://www.google.com/s2/favicons?domain=reddit.com/r/finance&sz=32',
+    'r/worldnews': 'https://www.google.com/s2/favicons?domain=reddit.com/r/worldnews&sz=32',
+    'r/news': 'https://www.google.com/s2/favicons?domain=reddit.com/r/news&sz=32',
+    'r/science': 'https://www.google.com/s2/favicons?domain=reddit.com/r/science&sz=32',
+    'r/Futurology': 'https://www.google.com/s2/favicons?domain=reddit.com/r/Futurology&sz=32',
+    'r/space': 'https://www.google.com/s2/favicons?domain=reddit.com/r/space&sz=32',
+    'r/productivity': 'https://www.google.com/s2/favicons?domain=reddit.com/r/productivity&sz=32',
+    'r/getdisciplined': 'https://www.google.com/s2/favicons?domain=reddit.com/r/getdisciplined&sz=32',
+    'r/selfimprovement': 'https://www.google.com/s2/favicons?domain=reddit.com/r/selfimprovement&sz=32',
+    'r/books': 'https://www.google.com/s2/favicons?domain=reddit.com/r/books&sz=32',
+    'r/learnprogramming': 'https://www.google.com/s2/favicons?domain=reddit.com/r/learnprogramming&sz=32',
+    'r/MachineLearning': 'https://www.google.com/s2/favicons?domain=reddit.com/r/MachineLearning&sz=32',
+    'r/artificial': 'https://www.google.com/s2/favicons?domain=reddit.com/r/artificial&sz=32',
+    'r/OpenAI': 'https://www.google.com/s2/favicons?domain=reddit.com/r/OpenAI&sz=32',
+    'r/StableDiffusion': 'https://www.google.com/s2/favicons?domain=reddit.com/r/StableDiffusion&sz=32',
+    'r/LocalLLaMA': 'https://www.google.com/s2/favicons?domain=reddit.com/r/LocalLLaMA&sz=32',
+    'r/gaming': 'https://www.google.com/s2/favicons?domain=reddit.com/r/gaming&sz=32',
+    'r/pcgaming': 'https://www.google.com/s2/favicons?domain=reddit.com/r/pcgaming&sz=32',
+    'r/PS5': 'https://www.google.com/s2/favicons?domain=reddit.com/r/PS5&sz=32',
+    'r/xboxone': 'https://www.google.com/s2/favicons?domain=reddit.com/r/xboxone&sz=32',
+    'r/NintendoSwitch': 'https://www.google.com/s2/favicons?domain=reddit.com/r/NintendoSwitch&sz=32',
+  };
+
+  // Check if it's a known source first
   if (knownSources[sourceName]) {
     return knownSources[sourceName];
   }
 
-  // Fallback to Google's favicon service using the URL
+  // Check if it's a Reddit subreddit
+  if (redditSubreddits[sourceName]) {
+    return redditSubreddits[sourceName];
+  }
+
+  // Check if it's a Reddit URL but not in our known list
+  if (sourceUrl && sourceUrl.includes('reddit.com')) {
+    return 'https://www.google.com/s2/favicons?domain=reddit.com&sz=32';
+  }
+
+  // Fallback to generic favicon service
   if (sourceUrl) {
     return getFaviconUrl(sourceUrl);
   }
 
-  // Default fallback
+  // Final fallback
   return 'https://www.google.com/s2/favicons?domain=example.com&sz=32';
 }; 

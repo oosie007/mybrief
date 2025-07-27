@@ -261,9 +261,6 @@ const SavedArticlesScreen = ({ navigation }: any) => {
             <Text style={[styles.sourceText, { color: theme.textSecondary }]}>
               {feedSourceName}
             </Text>
-            <Text style={[styles.timeText, { color: theme.textMuted }]}>
-              {formattedDate || 'Just now'}
-            </Text>
             {isRead && (
               <View style={styles.readIndicator}>
                 <Ionicons name="checkmark-circle" size={12} color={theme.accent} />
@@ -297,14 +294,42 @@ const SavedArticlesScreen = ({ navigation }: any) => {
         </Text>
 
         <View style={styles.cardFooter}>
-          <View style={styles.decorativeDots}>
-            <View style={[styles.dot, { backgroundColor: theme.divider }]} />
-            <View style={[styles.dot, { backgroundColor: theme.divider }]} />
-            <View style={[styles.dot, { backgroundColor: theme.divider }]} />
+          {/* Author/Reddit Metrics on the left */}
+          <View style={styles.footerLeft}>
+            {article.content_data?.content_type !== 'reddit' ? (
+              <Text style={[styles.authorText, { color: theme.textMuted }]}>
+                {article.content_data?.author || 'Unknown Author'}
+              </Text>
+            ) : (
+              <View style={styles.redditMetrics}>
+                <View style={styles.redditMetric}>
+                  <Ionicons name="arrow-up" size={12} color={theme.textMuted} />
+                  <Text style={[styles.redditMetricText, { color: theme.textMuted }]}>
+                    {article.content_data?.score || 0}
+                  </Text>
+                </View>
+                <View style={styles.redditMetric}>
+                  <Ionicons name="chatbubble-outline" size={12} color={theme.textMuted} />
+                  <Text style={[styles.redditMetricText, { color: theme.textMuted }]}>
+                    {article.content_data?.num_comments || 0}
+                  </Text>
+                </View>
+              </View>
+            )}
           </View>
-          <TouchableOpacity style={styles.shareButton}>
-            <Ionicons name="share-outline" size={14} color={theme.textSecondary} />
-          </TouchableOpacity>
+          
+          {/* Published Date on the right */}
+          <View style={styles.footerRight}>
+            <Text style={[styles.publishedText, { color: theme.textMuted }]}>
+              {article.content_data?.published_at ? new Date(article.content_data.published_at).toLocaleString('en-US', { 
+                month: 'short', 
+                day: 'numeric', 
+                hour: 'numeric', 
+                minute: '2-digit', 
+                hour12: true 
+              }) : 'Unknown Date'}
+            </Text>
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -548,9 +573,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     marginRight: 8,
   },
-  timeText: {
-    fontSize: 11,
-  },
+
   cardActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -578,20 +601,17 @@ const styles = StyleSheet.create({
   },
   cardFooter: {
     flexDirection: 'row',
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 12,
   },
-  decorativeDots: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  footerLeft: {
+    flex: 1,
+    alignItems: 'flex-start',
   },
-  dot: {
-    width: 20,
-    height: 4,
-    borderRadius: 2,
+  footerRight: {
+    alignItems: 'flex-end',
   },
+
   shareButton: {
     padding: 4,
   },
@@ -636,6 +656,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
     fontWeight: '500',
+  },
+  redditMetrics: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  redditMetric: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  redditMetricText: {
+    fontSize: 11,
+  },
+  authorText: {
+    fontSize: 11,
+  },
+  publishedText: {
+    fontSize: 11,
   },
 });
 
