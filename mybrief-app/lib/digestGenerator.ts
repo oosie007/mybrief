@@ -24,9 +24,38 @@ export interface UserDigest {
 /**
  * Aggregate new content from all user feeds for a specific date
  */
-export async function aggregateUserContent(userId: string, date: string): Promise<ContentItem[]> {
+export async function aggregateUserContent(
+  userId: string, 
+  date: string, 
+  feedConfig?: {
+    articles_per_feed?: number;
+    total_articles?: number;
+    time_window_hours?: number;
+    use_time_window?: boolean;
+  }
+): Promise<ContentItem[]> {
   try {
-    console.log('Aggregating content for user:', userId, 'date:', date);
+    console.log('Aggregating content for user:', userId, 'date:', date, 'config:', feedConfig);
+    
+    // Get user's feed configuration
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('feed_config')
+      .eq('id', userId)
+      .single();
+
+    if (userError) {
+      console.error('Error fetching user config:', userError);
+    }
+
+    const userFeedConfig = userData?.feed_config || feedConfig || {
+      articles_per_feed: 10,
+      total_articles: 50,
+      time_window_hours: 24,
+      use_time_window: false,
+    };
+
+    console.log('Using feed config:', userFeedConfig);
     
     // Get all active feeds for the user
     const { data: userFeeds, error: feedsError } = await supabase
@@ -57,14 +86,25 @@ export async function aggregateUserContent(userId: string, date: string): Promis
     const feedSourceIds = userFeeds.map(feed => feed.feed_source_id);
     console.log('Feed source IDs:', feedSourceIds);
 
-    // Get content items from the last 7 days for these feeds (instead of just today)
+    // Calculate date range based on user configuration
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 7); // Last 7 days
-    startDate.setHours(0, 0, 0, 0);
     const endDate = new Date();
-    endDate.setHours(23, 59, 59, 999);
+    
+    if (userFeedConfig.use_time_window) {
+      // Use time window: last X hours
+      startDate.setHours(startDate.getHours() - userFeedConfig.time_window_hours);
+      console.log(`Using time window: last ${userFeedConfig.time_window_hours} hours`);
+      console.log(`Time window: ${startDate.toISOString()} to ${endDate.toISOString()}`);
+    } else {
+      // Use date range: last 7 days (default)
+      startDate.setDate(startDate.getDate() - 7);
+      startDate.setHours(0, 0, 0, 0);
+      endDate.setHours(23, 59, 59, 999);
+      console.log('Using date range: last 7 days');
+    }
 
     console.log('Searching for content between:', startDate.toISOString(), 'and', endDate.toISOString());
+    console.log('Current time:', new Date().toISOString());
 
     const { data: contentItems, error: contentError } = await supabase
       .from('content_items')
@@ -94,13 +134,23 @@ export async function aggregateUserContent(userId: string, date: string): Promis
 
     console.log('Content items found:', contentItems?.length || 0);
     
+    // Log article ages for debugging
+    if (contentItems && contentItems.length > 0) {
+      const now = new Date();
+      contentItems.forEach((item, index) => {
+        const publishedDate = new Date(item.published_at);
+        const hoursAgo = Math.round((now.getTime() - publishedDate.getTime()) / (1000 * 60 * 60));
+        console.log(`Article ${index + 1}: "${item.title}" - ${hoursAgo} hours ago`);
+      });
+    }
+
     // Map to ContentItem format
-    const mappedItems = (contentItems || []).map(item => ({
+    const mappedItems: ContentItem[] = (contentItems || []).map(item => ({
       id: item.id,
       title: item.title || 'Untitled',
       url: item.url || '',
       description: item.description || '',
-      image_url: item.image_url,
+      image_url: item.image_url || undefined,
       published_at: item.published_at,
       content_type: item.content_type || 'article',
       feed_source_id: item.feed_source_id,
@@ -109,8 +159,36 @@ export async function aggregateUserContent(userId: string, date: string): Promis
         type: (item.feed_sources as any)?.type || 'rss'
       }
     }));
-    
-    return mappedItems;
+
+    // Apply article limits based on user configuration
+    let limitedItems = mappedItems;
+
+    if (!userFeedConfig.use_time_window) {
+      // Group items by feed source
+      const itemsByFeed: { [feedId: string]: ContentItem[] } = {};
+      mappedItems.forEach(item => {
+        if (!itemsByFeed[item.feed_source_id]) {
+          itemsByFeed[item.feed_source_id] = [];
+        }
+        itemsByFeed[item.feed_source_id].push(item);
+      });
+
+      // Limit articles per feed
+      const limitedByFeed: ContentItem[] = [];
+      Object.values(itemsByFeed).forEach(feedItems => {
+        const limited = feedItems.slice(0, userFeedConfig.articles_per_feed);
+        limitedByFeed.push(...limited);
+      });
+
+      // Sort by published date (newest first) and limit total
+      limitedByFeed.sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime());
+      limitedItems = limitedByFeed.slice(0, userFeedConfig.total_articles);
+
+      console.log(`Limited to ${userFeedConfig.articles_per_feed} articles per feed, ${userFeedConfig.total_articles} total`);
+    }
+
+    console.log('Final content items:', limitedItems.length);
+    return limitedItems;
   } catch (error) {
     console.error('Error aggregating user content:', error);
     throw error;

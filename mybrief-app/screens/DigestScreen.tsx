@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,9 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Linking,
+  TextInput,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../lib/theme';
@@ -16,10 +19,10 @@ import { supabase } from '../lib/supabase';
 import { getDailyDigest } from '../lib/digestStorage';
 import { StoredDigest } from '../lib/digestStorage';
 import { LoadingState, ErrorState, NoDigestState } from '../components/UIStates';
-import { saveShareService } from '../lib/saveShareService';
-import SaveArticleModal from '../components/SaveArticleModal';
 import { aggregateUserContent, debugContent } from '../lib/digestGenerator';
 import { getFeedSourceFavicon } from '../lib/faviconService';
+import ArticleViewer from '../components/ArticleViewer';
+import { savedArticlesService } from '../lib/savedArticlesService';
 
 interface ContentItem {
   id: string;
@@ -47,15 +50,69 @@ const DigestScreen = ({ navigation }: any) => {
   const [selectedArticle, setSelectedArticle] = useState<ContentItem | null>(null);
   const [displayMode, setDisplayMode] = useState<'minimal' | 'rich'>('minimal');
   const [error, setError] = useState<string | null>(null);
-  const [saveModalVisible, setSaveModalVisible] = useState(false);
   const [savedArticles, setSavedArticles] = useState<Set<string>>(new Set());
+  const [readArticles, setReadArticles] = useState<Set<string>>(new Set());
+  const [articleViewerVisible, setArticleViewerVisible] = useState(false);
+  
+  // Collapsible UI states
+  const [filtersVisible, setFiltersVisible] = useState(false);
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Animated values for smooth transitions
+  const filtersAnimation = useRef(new Animated.Value(0)).current;
+  const searchAnimation = useRef(new Animated.Value(0)).current;
 
   const categories = ['All', 'Technology', 'Business', 'Startups', 'Productivity', 'News'];
+
+  const toggleFilters = () => {
+    const toValue = filtersVisible ? 0 : 1;
+    setFiltersVisible(!filtersVisible);
+    Animated.timing(filtersAnimation, {
+      toValue,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  const toggleSearch = () => {
+    const toValue = searchVisible ? 0 : 1;
+    setSearchVisible(!searchVisible);
+    Animated.timing(searchAnimation, {
+      toValue,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+  };
 
   useEffect(() => {
     loadTodayDigest();
     loadSavedArticles();
+    loadReadArticles();
   }, []);
+
+  const loadReadArticles = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('saved_articles')
+        .select('content_item_id')
+        .eq('user_id', user.id)
+        .not('read_at', 'is', null);
+
+      if (error) {
+        console.error('Error loading read articles:', error);
+        return;
+      }
+
+      const readIds = new Set(data?.map(item => item.content_item_id) || []);
+      setReadArticles(readIds);
+    } catch (error) {
+      console.error('Error loading read articles:', error);
+    }
+  };
 
   const loadTodayDigest = async () => {
     try {
@@ -284,22 +341,51 @@ const DigestScreen = ({ navigation }: any) => {
   const onRefresh = async () => {
     setRefreshing(true);
     await loadTodayDigest();
+    await loadSavedArticles();
+    await loadReadArticles();
     setRefreshing(false);
   };
 
   const loadSavedArticles = async () => {
     try {
-      const savedArticlesData = await saveShareService.getSavedArticles();
-      const savedIds = new Set(savedArticlesData.map(article => article.content_item_id));
+      const savedIds = await savedArticlesService.getSavedArticleIds();
       setSavedArticles(savedIds);
     } catch (error) {
       console.error('Error loading saved articles:', error);
     }
   };
 
-  const handleSaveArticle = (article: ContentItem) => {
-    setSelectedArticle(article);
-    setSaveModalVisible(true);
+  const handleSaveArticle = async (article: ContentItem) => {
+    try {
+      const isCurrentlySaved = savedArticles.has(article.id);
+      
+      if (isCurrentlySaved) {
+        // Unsave the article
+        const success = await savedArticlesService.unsaveArticle(article.id);
+        if (success) {
+          setSavedArticles(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(article.id);
+            return newSet;
+          });
+          Alert.alert('Article Removed', 'Article removed from saved items');
+        } else {
+          Alert.alert('Error', 'Failed to remove article from saved items');
+        }
+      } else {
+        // Save the article
+        const success = await savedArticlesService.saveArticle(article.id);
+        if (success) {
+          setSavedArticles(prev => new Set([...prev, article.id]));
+          Alert.alert('Article Saved', 'Article added to saved items');
+        } else {
+          Alert.alert('Error', 'Failed to save article');
+        }
+      }
+    } catch (error) {
+      console.error('Error handling save/unsave:', error);
+      Alert.alert('Error', 'Failed to save/unsave article');
+    }
   };
 
   const handleShareArticle = async (article: ContentItem) => {
@@ -317,10 +403,29 @@ const DigestScreen = ({ navigation }: any) => {
     }
   };
 
-  const handleArticleSaved = () => {
-    setSaveModalVisible(false);
-    setSelectedArticle(null);
-    loadSavedArticles();
+  const handleOpenArticle = async (article: ContentItem) => {
+    if (!article.url) {
+      Alert.alert('Error', 'No URL available for this article');
+      return;
+    }
+
+    try {
+      const supported = await Linking.canOpenURL(article.url);
+      
+      if (supported) {
+        setSelectedArticle(article);
+        setArticleViewerVisible(true);
+        // Mark the article as read
+        await savedArticlesService.markAsRead(article.id);
+        // Update UI state
+        setReadArticles(prev => new Set([...prev, article.id]));
+      } else {
+        Alert.alert('Error', 'Cannot open this URL');
+      }
+    } catch (error) {
+      console.error('Error opening article:', error);
+      Alert.alert('Error', 'Failed to open article');
+    }
   };
 
   const getSourceIcon = (source: string, type: string, sourceUrl?: string) => {
@@ -378,6 +483,8 @@ const DigestScreen = ({ navigation }: any) => {
 
   const ContentCard = ({ item }: { item: any }) => {
     const isSaved = savedArticles.has(item.id);
+    const isRead = readArticles.has(item.id);
+    
     // Format the published date
     const formattedDate = item.published_at
       ? new Date(item.published_at).toLocaleString('en-US', {
@@ -392,11 +499,19 @@ const DigestScreen = ({ navigation }: any) => {
     console.log('ContentCard received item:', {
       title: item.title,
       published_at: item.published_at,
-      formattedDate: formattedDate
+      formattedDate: formattedDate,
+      isRead: isRead
     });
     
     return (
-      <TouchableOpacity style={[styles.contentCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+      <TouchableOpacity 
+        style={[
+          styles.contentCard, 
+          { backgroundColor: theme.cardBg, borderColor: theme.border },
+          isRead && { opacity: 0.7 } // Dim read articles slightly
+        ]} 
+        onPress={() => handleOpenArticle(item)}
+      >
         <View style={styles.cardHeader}>
           <View style={styles.sourceInfo}>
             <Image
@@ -409,6 +524,12 @@ const DigestScreen = ({ navigation }: any) => {
             <Text style={[styles.timeText, { color: theme.textMuted }]}>
               {formattedDate || 'Just now'}
             </Text>
+            {isRead && (
+              <View style={styles.readIndicator}>
+                <Ionicons name="checkmark-circle" size={12} color={theme.accent} />
+                <Text style={[styles.readText, { color: theme.accent }]}>Read</Text>
+              </View>
+            )}
           </View>
           
           <View style={styles.cardActions}>
@@ -431,7 +552,14 @@ const DigestScreen = ({ navigation }: any) => {
           </View>
         </View>
 
-        <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={3}>
+        <Text 
+          style={[
+            styles.cardTitle, 
+            { color: theme.text },
+            isRead && { fontWeight: '400' } // Lighter font weight for read articles
+          ]} 
+          numberOfLines={3}
+        >
           {item.title}
         </Text>
         
@@ -484,22 +612,21 @@ const DigestScreen = ({ navigation }: any) => {
   // Get content items with full data from mock content map
   const getContentItems = () => {
     if (!digest?.content_items) return [];
-    
+
     return digest.content_items
-      .map(digestItem => {
-        // For real content, use the content_data field
-        if ((digestItem as any).content_data) {
+      .map((digestItem: any) => {
+        if (digestItem.content_data) {
           const contentItem: ContentItem = {
-            id: (digestItem as any).content_data.id,
-            title: (digestItem as any).content_data.title || 'Untitled',
-            url: (digestItem as any).content_data.url || '',
-            summary: (digestItem as any).content_data.description || (digestItem as any).content_data.title || '',
+            id: digestItem.content_data.id || digestItem.id,
+            title: digestItem.content_data.title || 'Untitled',
+            url: digestItem.content_data.url || '',
+            summary: digestItem.content_data.description || '',
             relevanceScore: digestItem.relevance_score || 0,
-            category: (digestItem as any).content_data.feed_sources?.name || 'General',
+            category: digestItem.content_data.category || 'General',
             keyPoints: digestItem.key_points || [],
             estimatedReadTime: digestItem.estimated_read_time || 3,
-            content_type: (digestItem as any).content_data.content_type || 'article',
-            feed_sources: (digestItem as any).content_data.feed_sources || {
+            content_type: digestItem.content_data.content_type || 'rss',
+            feed_sources: digestItem.content_data.feed_sources || {
               name: 'Unknown',
               type: 'rss'
             },
@@ -514,6 +641,12 @@ const DigestScreen = ({ navigation }: any) => {
           
           // Filter by category if not "All"
           if (activeCategory !== 'All' && contentItem.category !== activeCategory) {
+            return null;
+          }
+          
+          // Filter by search query
+          if (searchQuery.trim() && !contentItem.title.toLowerCase().includes(searchQuery.toLowerCase()) && 
+              !contentItem.summary.toLowerCase().includes(searchQuery.toLowerCase())) {
             return null;
           }
           
@@ -540,57 +673,108 @@ const DigestScreen = ({ navigation }: any) => {
           </View>
           
           <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.headerButton} onPress={toggleTheme}>
+            <TouchableOpacity 
+              style={styles.headerButton} 
+              onPress={toggleFilters}
+            >
               <Ionicons 
-                name={isDarkMode ? 'sunny' : 'moon'} 
+                name="filter" 
                 size={18} 
-                color={theme.text} 
+                color={filtersVisible ? theme.accent : theme.text} 
               />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.headerButton}>
-              <Ionicons name="search" size={18} color={theme.text} />
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={toggleSearch}
+            >
+              <Ionicons 
+                name="search" 
+                size={18} 
+                color={searchVisible ? theme.accent : theme.text} 
+              />
             </TouchableOpacity>
             <TouchableOpacity style={styles.headerButton} onPress={onRefresh}>
               <Ionicons name="refresh" size={18} color={theme.text} />
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.headerButton}
-              onPress={() => navigation.navigate('Settings')}
-            >
-              <Ionicons name="settings-outline" size={18} color={theme.text} />
-            </TouchableOpacity>
           </View>
         </View>
 
-        {/* Category Filter */}
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          style={styles.categoryContainer}
-          contentContainerStyle={styles.categoryContent}
+        {/* Search Bar - Collapsible */}
+        <Animated.View 
+          style={[
+            styles.searchContainer, 
+            { 
+              backgroundColor: theme.background,
+              maxHeight: searchAnimation.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 50], // Reduced from 60
+              }),
+              opacity: searchAnimation,
+            }
+          ]}
         >
-          {categories.map((category) => (
-            <TouchableOpacity
-              key={category}
-              style={[
-                styles.categoryPill,
-                activeCategory === category 
-                  ? { backgroundColor: theme.accent }
-                  : { backgroundColor: theme.pill }
-              ]}
-              onPress={() => setActiveCategory(category)}
+          {searchVisible && (
+            <View style={[styles.searchInputContainer, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+              <Ionicons name="search" size={16} color={theme.textMuted} style={styles.searchIcon} />
+              <TextInput
+                style={[styles.searchInput, { color: theme.text }]}
+                placeholder="Search articles..."
+                placeholderTextColor={theme.textMuted}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <Ionicons name="close-circle" size={16} color={theme.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </Animated.View>
+
+        {/* Category Filter - Collapsible */}
+        <Animated.View
+          style={[
+            styles.categoryContainer,
+            {
+              maxHeight: filtersAnimation.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 40], // Reduced from 50
+              }),
+              opacity: filtersAnimation,
+            }
+          ]}
+        >
+          {filtersVisible && (
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoryContent}
             >
-              <Text style={[
-                styles.categoryText,
-                activeCategory === category 
-                  ? { color: theme.accentText }
-                  : { color: theme.pillText }
-              ]}>
-                {category}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+              {categories.map((category) => (
+                <TouchableOpacity
+                  key={category}
+                  style={[
+                    styles.categoryPill,
+                    activeCategory === category 
+                      ? { backgroundColor: theme.accent }
+                      : { backgroundColor: theme.pill }
+                  ]}
+                  onPress={() => setActiveCategory(category)}
+                >
+                  <Text style={[
+                    styles.categoryText,
+                    activeCategory === category 
+                      ? { color: theme.accentText }
+                      : { color: theme.pillText }
+                  ]}>
+                    {category}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+        </Animated.View>
       </View>
 
       {/* Content */}
@@ -603,6 +787,14 @@ const DigestScreen = ({ navigation }: any) => {
       >
         {digest ? (
           <>
+            {/* Section Header */}
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>News & Articles</Text>
+              <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
+                {filteredContent.length} article{filteredContent.length !== 1 ? 's' : ''} for today
+              </Text>
+            </View>
+
             {filteredContent.length > 0 ? (
               filteredContent.map((item: any, index: number) => (
                 <ContentCard key={item.id || index} item={item} />
@@ -625,13 +817,26 @@ const DigestScreen = ({ navigation }: any) => {
       </ScrollView>
 
       {/* Save Article Modal */}
-      <SaveArticleModal
+      {/* This modal is no longer needed as saving is handled by savedArticlesService */}
+      {/* <SaveArticleModal
         visible={saveModalVisible}
         onClose={() => setSaveModalVisible(false)}
         contentItemId={selectedArticle?.id || ''}
         articleTitle={selectedArticle?.title || ''}
         onSave={handleArticleSaved}
-      />
+      /> */}
+
+      {/* Article Viewer Modal */}
+      {articleViewerVisible && selectedArticle && (
+        <ArticleViewer
+          url={selectedArticle.url}
+          title={selectedArticle.title}
+          onClose={() => {
+            setArticleViewerVisible(false);
+            setSelectedArticle(null);
+          }}
+        />
+      )}
 
       {/* Bottom Navigation */}
       <View style={[styles.bottomNav, { backgroundColor: theme.headerBg, borderTopColor: theme.border }]}>
@@ -678,6 +883,7 @@ const styles = StyleSheet.create({
   header: {
     borderBottomWidth: 1,
     paddingTop: 50, // Safe area
+    minHeight: 60, // Minimum height instead of fixed height
   },
   headerTop: {
     flexDirection: 'row',
@@ -685,26 +891,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    minHeight: 60, // Ensure proper height for touch targets
   },
   logoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1, // Take available space
   },
   logo: {
-    width: 24,
-    height: 24,
+    width: 28, // Slightly larger
+    height: 28, // Slightly larger
     borderRadius: 6,
     marginRight: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
   logoInner: {
-    width: 12,
-    height: 12,
+    width: 14, // Slightly larger
+    height: 14, // Slightly larger
     borderRadius: 3,
   },
   appTitle: {
-    fontSize: 18,
+    fontSize: 20, // Slightly larger
     fontWeight: 'bold',
     fontFamily: 'Georgia',
     letterSpacing: -0.7,
@@ -712,22 +920,26 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8, // Consistent spacing between buttons
   },
   headerButton: {
-    padding: 8,
-    marginLeft: 4,
-    borderRadius: 6,
+    padding: 10, // Larger touch target
+    borderRadius: 8,
+    minWidth: 44, // iOS minimum touch target
+    minHeight: 44, // iOS minimum touch target
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   categoryContainer: {
     paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingBottom: 8, // Reduced from 12
   },
   categoryContent: {
     paddingRight: 16,
   },
   categoryPill: {
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 4, // Reduced from 6
     borderRadius: 16,
     marginRight: 8,
   },
@@ -868,6 +1080,50 @@ const styles = StyleSheet.create({
     height: 18,
     borderRadius: 9,
     marginRight: 4,
+  },
+  readIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 10,
+  },
+  readText: {
+    fontSize: 11,
+    marginLeft: 4,
+  },
+  sectionHeader: {
+    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingTop: 24,
+  },
+  sectionTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 4,
+    fontFamily: 'Georgia',
+    letterSpacing: -0.7,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+  },
+  searchContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 8, // Reduced from 12
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    paddingVertical: 0,
   },
 });
 

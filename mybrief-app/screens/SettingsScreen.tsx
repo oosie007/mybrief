@@ -23,6 +23,12 @@ interface UserProfile {
   display_mode: 'minimal' | 'rich';
   onboarding_completed: boolean;
   created_at: string;
+  feed_config?: {
+    articles_per_feed?: number;
+    total_articles?: number;
+    time_window_hours?: number;
+    use_time_window?: boolean;
+  };
 }
 
 const SettingsScreen = ({ navigation }: any) => {
@@ -39,6 +45,12 @@ const SettingsScreen = ({ navigation }: any) => {
   const [timezone, setTimezone] = useState('');
   const [notificationTime, setNotificationTime] = useState('');
   const [displayMode, setDisplayMode] = useState<'minimal' | 'rich'>('minimal');
+  
+  // Feed configuration states
+  const [articlesPerFeed, setArticlesPerFeed] = useState('10');
+  const [totalArticles, setTotalArticles] = useState('50');
+  const [timeWindowHours, setTimeWindowHours] = useState('24');
+  const [useTimeWindow, setUseTimeWindow] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -58,12 +70,24 @@ const SettingsScreen = ({ navigation }: any) => {
         display_mode: 'minimal',
         onboarding_completed: true,
         created_at: new Date().toISOString(),
+        feed_config: {
+          articles_per_feed: 10,
+          total_articles: 50,
+          time_window_hours: 24,
+          use_time_window: false,
+        },
       };
 
       setProfile(mockProfile);
       setTimezone(mockProfile.timezone);
       setNotificationTime(mockProfile.digest_time);
       setDisplayMode(mockProfile.display_mode);
+      
+      // Set feed configuration
+      setArticlesPerFeed(mockProfile.feed_config?.articles_per_feed?.toString() || '10');
+      setTotalArticles(mockProfile.feed_config?.total_articles?.toString() || '50');
+      setTimeWindowHours(mockProfile.feed_config?.time_window_hours?.toString() || '24');
+      setUseTimeWindow(mockProfile.feed_config?.use_time_window || false);
     } catch (error) {
       console.error('Error loading profile:', error);
       setError('Failed to load profile');
@@ -86,6 +110,12 @@ const SettingsScreen = ({ navigation }: any) => {
           timezone,
           digest_time: notificationTime,
           display_mode: displayMode,
+          feed_config: {
+            articles_per_feed: parseInt(articlesPerFeed) || 10,
+            total_articles: parseInt(totalArticles) || 50,
+            time_window_hours: parseInt(timeWindowHours) || 24,
+            use_time_window: useTimeWindow,
+          },
         })
         .eq('id', profile.id);
 
@@ -469,6 +499,85 @@ const SettingsScreen = ({ navigation }: any) => {
           />
         </View>
 
+        {/* Feed Configuration Section */}
+        <SectionHeader title="Feed Configuration" />
+        <View style={[styles.section, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+          <SettingItem
+            icon="newspaper"
+            title="Use Time Window"
+            subtitle={useTimeWindow ? `Last ${timeWindowHours} hours` : 'Use article limits'}
+            rightElement={
+              <Switch
+                value={useTimeWindow}
+                onValueChange={setUseTimeWindow}
+                trackColor={{ false: theme.border, true: theme.accent }}
+                thumbColor={theme.background}
+              />
+            }
+          />
+
+          {useTimeWindow ? (
+            <View style={styles.formGroup}>
+              <Text style={[styles.formLabel, { color: theme.text }]}>Time Window (hours)</Text>
+              <TextInput
+                style={[styles.formInput, { 
+                  backgroundColor: theme.background, 
+                  borderColor: theme.border,
+                  color: theme.text 
+                }]}
+                placeholder="24"
+                placeholderTextColor={theme.textMuted}
+                value={timeWindowHours}
+                onChangeText={setTimeWindowHours}
+                keyboardType="numeric"
+              />
+              <Text style={[styles.formHelpText, { color: theme.textMuted }]}>
+                Show all articles from the last X hours
+              </Text>
+            </View>
+          ) : (
+            <>
+              <View style={styles.formGroup}>
+                <Text style={[styles.formLabel, { color: theme.text }]}>Articles per Feed</Text>
+                <TextInput
+                  style={[styles.formInput, { 
+                    backgroundColor: theme.background, 
+                    borderColor: theme.border,
+                    color: theme.text 
+                  }]}
+                  placeholder="10"
+                  placeholderTextColor={theme.textMuted}
+                  value={articlesPerFeed}
+                  onChangeText={setArticlesPerFeed}
+                  keyboardType="numeric"
+                />
+                <Text style={[styles.formHelpText, { color: theme.textMuted }]}>
+                  Maximum articles to fetch from each feed source
+                </Text>
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={[styles.formLabel, { color: theme.text }]}>Total Articles Limit</Text>
+                <TextInput
+                  style={[styles.formInput, { 
+                    backgroundColor: theme.background, 
+                    borderColor: theme.border,
+                    color: theme.text 
+                  }]}
+                  placeholder="50"
+                  placeholderTextColor={theme.textMuted}
+                  value={totalArticles}
+                  onChangeText={setTotalArticles}
+                  keyboardType="numeric"
+                />
+                <Text style={[styles.formHelpText, { color: theme.textMuted }]}>
+                  Maximum total articles in your daily digest
+                </Text>
+              </View>
+            </>
+          )}
+        </View>
+
         {/* Data & Privacy Section */}
         <SectionHeader title="Data & Privacy" />
         <View style={[styles.section, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
@@ -709,6 +818,11 @@ const styles = StyleSheet.create({
   formButtonText: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  formHelpText: {
+    fontSize: 12,
+    marginTop: 4,
+    marginLeft: 12,
   },
   bottomNav: {
     flexDirection: 'row',

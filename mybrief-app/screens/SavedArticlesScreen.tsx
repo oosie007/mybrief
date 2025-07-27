@@ -10,33 +10,15 @@ import {
   TextInput,
   RefreshControl,
   Image,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 import { LoadingState, ErrorState, NoSavedArticlesState, SearchEmptyState } from '../components/UIStates';
 import { getFeedSourceFavicon } from '../lib/faviconService';
-
-interface SavedArticle {
-  id: string;
-  user_id: string;
-  content_item_id: string;
-  saved_at: string;
-  is_read: boolean;
-  content_items: {
-    id: string;
-    title: string;
-    url: string;
-    description: string;
-    image_url?: string;
-    published_at: string;
-    content_type: string;
-    feed_sources: {
-      name: string;
-      type: string;
-    };
-  };
-}
+import ArticleViewer from '../components/ArticleViewer';
+import { savedArticlesService, SavedArticle } from '../lib/savedArticlesService';
 
 const SavedArticlesScreen = ({ navigation }: any) => {
   const { theme, isDarkMode } = useTheme();
@@ -48,6 +30,8 @@ const SavedArticlesScreen = ({ navigation }: any) => {
   const [selectedArticles, setSelectedArticles] = useState<string[]>([]);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [showArticleViewer, setShowArticleViewer] = useState(false);
+  const [currentArticle, setCurrentArticle] = useState<SavedArticle | null>(null);
 
   useEffect(() => {
     loadSavedArticles();
@@ -58,51 +42,8 @@ const SavedArticlesScreen = ({ navigation }: any) => {
       setLoading(true);
       setLoadError(null);
       
-      // Mock data for demo purposes
-      const mockSavedArticles = [
-        {
-          id: '1',
-          user_id: 'demo-user',
-          content_item_id: '1',
-          saved_at: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
-          is_read: false,
-          content_items: {
-            id: '1',
-            title: 'The Future of AI in Mobile Development',
-            url: 'https://example.com/ai-mobile-dev',
-            description: 'Exploring how artificial intelligence is transforming the way we build and use mobile applications.',
-            image_url: undefined,
-            published_at: new Date(Date.now() - 86400000).toISOString(),
-            content_type: 'article',
-            feed_sources: {
-              name: 'TechCrunch',
-              type: 'rss'
-            }
-          }
-        },
-        {
-          id: '2',
-          user_id: 'demo-user',
-          content_item_id: '2',
-          saved_at: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
-          is_read: true,
-          content_items: {
-            id: '2',
-            title: 'Startup Funding Trends in 2024',
-            url: 'https://example.com/startup-funding',
-            description: 'A comprehensive look at the changing landscape of startup funding and what entrepreneurs need to know.',
-            image_url: undefined,
-            published_at: new Date(Date.now() - 172800000).toISOString(),
-            content_type: 'article',
-            feed_sources: {
-              name: 'VentureBeat',
-              type: 'rss'
-            }
-          }
-        }
-      ];
-      
-      setSavedArticles(mockSavedArticles);
+      const articles = await savedArticlesService.getSavedArticles();
+      setSavedArticles(articles);
     } catch (error) {
       console.error('Error loading saved articles:', error);
       setLoadError('Failed to load saved articles');
@@ -115,31 +56,6 @@ const SavedArticlesScreen = ({ navigation }: any) => {
     setRefreshing(true);
     await loadSavedArticles();
     setRefreshing(false);
-  };
-
-  const toggleReadStatus = async (articleId: string, isRead: boolean) => {
-    try {
-      const { error } = await supabase
-        .from('saved_articles')
-        .update({ is_read: !isRead })
-        .eq('id', articleId);
-
-      if (error) {
-        console.error('Error updating read status:', error);
-        Alert.alert('Error', 'Failed to update read status');
-      } else {
-        setSavedArticles(prev =>
-          prev.map(article =>
-            article.id === articleId
-              ? { ...article, is_read: !isRead }
-              : article
-          )
-        );
-      }
-    } catch (error) {
-      console.error('Error updating read status:', error);
-      Alert.alert('Error', 'Failed to update read status');
-    }
   };
 
   const removeSavedArticle = async (articleId: string) => {
@@ -222,6 +138,29 @@ const SavedArticlesScreen = ({ navigation }: any) => {
     setSelectedArticles([]);
   };
 
+  const handleOpenArticle = async (article: SavedArticle) => {
+    if (!article.content_data?.url) {
+      Alert.alert('Error', 'No URL available for this article');
+      return;
+    }
+
+    setCurrentArticle(article);
+    setShowArticleViewer(true);
+    
+    // Mark as read if not already read
+    if (!article.read_at) {
+      await savedArticlesService.markAsRead(article.content_item_id);
+      // Update local state
+      setSavedArticles(prev =>
+        prev.map(a =>
+          a.id === article.id
+            ? { ...a, read_at: new Date().toISOString() }
+            : a
+        )
+      );
+    }
+  };
+
   const getSourceIcon = (source: string, type: string, sourceUrl?: string) => {
     // Get the actual favicon URL for this source
     return getFeedSourceFavicon(source, sourceUrl);
@@ -273,97 +212,103 @@ const SavedArticlesScreen = ({ navigation }: any) => {
   };
 
   const filteredArticles = savedArticles.filter(article => {
-    const matchesSearch = article.content_items.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         article.content_items.description.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = (article.content_data?.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         (article.content_data?.description || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = filter === 'all' || 
-                         (filter === 'unread' && !article.is_read) ||
-                         (filter === 'read' && article.is_read);
+                         (filter === 'unread' && !article.read_at) ||
+                         (filter === 'read' && article.read_at);
     
     return matchesSearch && matchesFilter;
   });
 
-  const unreadCount = savedArticles.filter(article => !article.is_read).length;
-  const readCount = savedArticles.filter(article => article.is_read).length;
+  const unreadCount = savedArticles.filter(article => !article.read_at).length;
+  const readCount = savedArticles.filter(article => article.read_at).length;
 
-  const SavedArticleCard = ({ article }: { article: SavedArticle }) => (
-    <View style={[
-      styles.articleCard,
-      { backgroundColor: theme.cardBg, borderColor: theme.border },
-      !article.is_read && { borderLeftWidth: 4, borderLeftColor: theme.accent }
-    ]}>
-      {isSelectionMode && (
-        <TouchableOpacity
-          style={styles.selectionCheckbox}
-          onPress={() => toggleSelection(article.id)}
-        >
-          <Ionicons
-            name={selectedArticles.includes(article.id) ? 'checkbox' : 'square-outline'}
-            size={20}
-            color={selectedArticles.includes(article.id) ? theme.accent : theme.textMuted}
-          />
-        </TouchableOpacity>
-      )}
+  const SavedArticleCard = ({ article }: { article: SavedArticle }) => {
+    // Format the published date to match main digest format
+    const formattedDate = article.content_data?.published_at
+      ? new Date(article.content_data.published_at).toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        })
+      : '';
 
-      <View style={styles.articleContent}>
-        <View style={styles.articleHeader}>
+    // Get feed source name with better fallback
+    const feedSourceName = article.content_data?.feed_sources?.name || 
+                          article.content_data?.feed_sources?.type || 
+                          'Unknown';
+
+    const isRead = !!article.read_at;
+
+    return (
+      <TouchableOpacity
+        style={[
+          styles.contentCard,
+          { backgroundColor: theme.cardBg, borderColor: theme.border },
+          isRead && { opacity: 0.7 } // Dim read articles slightly like main feed
+        ]}
+        onPress={() => handleOpenArticle(article)}
+      >
+        <View style={styles.cardHeader}>
           <View style={styles.sourceInfo}>
             <Image
-              source={{ uri: getSourceIcon(article.content_items.feed_sources?.name || 'Unknown', article.content_items.content_type, article.content_items.url) }}
+              source={{ uri: getSourceIcon(feedSourceName, article.content_data?.content_type || '', article.content_data?.url || '') }}
               style={styles.sourceIcon}
             />
-            <Text style={[styles.sourceName, { color: theme.textSecondary }]}>
-              {article.content_items.feed_sources?.name || 'Unknown'}
+            <Text style={[styles.sourceText, { color: theme.textSecondary }]}>
+              {feedSourceName}
             </Text>
-            <Text style={[styles.savedDate, { color: theme.textMuted }]}>
-              • {formatDate(article.saved_at)}
+            <Text style={[styles.timeText, { color: theme.textMuted }]}>
+              {formattedDate || 'Just now'}
             </Text>
+            {isRead && (
+              <View style={styles.readIndicator}>
+                <Ionicons name="checkmark-circle" size={12} color={theme.accent} />
+                <Text style={[styles.readText, { color: theme.accent }]}>Read</Text>
+              </View>
+            )}
           </View>
-          <View style={styles.articleActions}>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => toggleReadStatus(article.id, article.is_read)}
-            >
-              <Ionicons
-                name={article.is_read ? 'eye-off' : 'eye'}
-                size={16}
-                color={theme.textMuted}
-              />
-            </TouchableOpacity>
+          <View style={styles.cardActions}>
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => removeSavedArticle(article.id)}
             >
-              <Ionicons name="trash-outline" size={16} color={theme.textMuted} />
+              <Ionicons name="trash-outline" size={16} color={theme.textSecondary} />
             </TouchableOpacity>
           </View>
         </View>
 
-        <Text style={[styles.articleTitle, { color: theme.text }]} numberOfLines={2}>
-          {article.content_items.title}
+        <Text 
+          style={[
+            styles.cardTitle, 
+            { color: theme.text },
+            isRead && { fontWeight: '400' } // Lighter font weight for read articles like main feed
+          ]} 
+          numberOfLines={3}
+        >
+          {article.content_data?.title || ''}
         </Text>
 
-        <Text style={[styles.articleDescription, { color: theme.textSecondary }]} numberOfLines={2}>
-          {article.content_items.description}
+        <Text style={[styles.cardSummary, { color: theme.textSecondary }]} numberOfLines={2}>
+          {article.content_data?.description || ''}
         </Text>
 
-        <View style={styles.articleFooter}>
-          <View style={styles.readStatus}>
-            <Ionicons
-              name={article.is_read ? 'checkmark-circle' : 'time'}
-              size={14}
-              color={article.is_read ? theme.accent : theme.textMuted}
-            />
-            <Text style={[styles.readStatusText, { color: article.is_read ? theme.accent : theme.textMuted }]}>
-              {article.is_read ? 'Read' : 'Unread'}
-            </Text>
+        <View style={styles.cardFooter}>
+          <View style={styles.decorativeDots}>
+            <View style={[styles.dot, { backgroundColor: theme.divider }]} />
+            <View style={[styles.dot, { backgroundColor: theme.divider }]} />
+            <View style={[styles.dot, { backgroundColor: theme.divider }]} />
           </View>
           <TouchableOpacity style={styles.shareButton}>
-            <Ionicons name="share-outline" size={14} color={theme.textMuted} />
+            <Ionicons name="share-outline" size={14} color={theme.textSecondary} />
           </TouchableOpacity>
         </View>
-      </View>
-    </View>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   if (loading) {
     return <LoadingState message="Loading saved articles..." />;
@@ -492,6 +437,18 @@ const SavedArticlesScreen = ({ navigation }: any) => {
           <Text style={[styles.navText, { color: theme.textSecondary }]}>Settings</Text>
         </TouchableOpacity>
       </View>
+      
+      {/* Article Viewer */}
+      {showArticleViewer && currentArticle && (
+        <ArticleViewer
+          url={currentArticle.content_data?.url || ''}
+          title={currentArticle.content_data?.title || ''}
+          onClose={() => {
+            setShowArticleViewer(false);
+            setCurrentArticle(null);
+          }}
+        />
+      )}
     </View>
   );
 };
@@ -559,21 +516,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
   },
-  articleCard: {
+  contentCard: {
     borderRadius: 8,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    flexDirection: 'row',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  selectionCheckbox: {
-    marginRight: 12,
-    justifyContent: 'center',
-  },
-  articleContent: {
-    flex: 1,
-  },
-  articleHeader: {
+  cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -582,23 +536,22 @@ const styles = StyleSheet.create({
   sourceInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
   },
   sourceIcon: {
     width: 18,
     height: 18,
     borderRadius: 9,
-    marginRight: 8,
+    marginRight: 4,
   },
-  sourceName: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  savedDate: {
+  sourceText: {
     fontSize: 12,
     marginLeft: 4,
+    marginRight: 8,
   },
-  articleActions: {
+  timeText: {
+    fontSize: 11,
+  },
+  cardActions: {
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -606,32 +559,50 @@ const styles = StyleSheet.create({
     padding: 4,
     marginLeft: 8,
   },
-  articleTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    lineHeight: 20,
-    marginBottom: 6,
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    lineHeight: 24,
+    marginBottom: 8,
+    fontFamily: 'Georgia',
+    letterSpacing: -0.7,
+    fontStyle: 'normal',
   },
-  articleDescription: {
+  cardSummary: {
     fontSize: 14,
-    lineHeight: 18,
+    lineHeight: 20,
     marginBottom: 12,
+    fontFamily: 'System',
+    fontWeight: '400',
+    color: '#6B7280', // Light gray like in your reference
   },
-  articleFooter: {
+  cardFooter: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     alignItems: 'center',
+    gap: 12,
   },
-  readStatus: {
+  decorativeDots: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
-  readStatusText: {
-    fontSize: 12,
-    marginLeft: 4,
+  dot: {
+    width: 20,
+    height: 4,
+    borderRadius: 2,
   },
   shareButton: {
     padding: 4,
+  },
+  readIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  readText: {
+    fontSize: 11,
+    marginLeft: 4,
   },
   emptyState: {
     alignItems: 'center',
