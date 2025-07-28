@@ -129,12 +129,37 @@ serve(async (req) => {
   try {
     console.log('RSS Fetcher started')
     
-    // 1. Get all active RSS feed sources
-    const { data: feeds, error } = await supabase
-      .from('feed_sources')
-      .select('*')
-      .eq('type', 'rss')
-      .eq('is_active', true)
+    // Check if this is an immediate fetch for a specific feed
+    const body = await req.json().catch(() => ({}))
+    const { feedSourceId, immediate } = body
+    
+    let feeds
+    let error
+    
+    if (immediate && feedSourceId) {
+      // Fetch specific feed for immediate processing
+      console.log(`Immediate fetch requested for feed source: ${feedSourceId}`)
+      const result = await supabase
+        .from('feed_sources')
+        .select('*')
+        .eq('id', feedSourceId)
+        .eq('type', 'rss')
+        .eq('is_active', true)
+        .single()
+      
+      feeds = result.data ? [result.data] : []
+      error = result.error
+    } else {
+      // Get all active RSS feed sources (scheduled fetch)
+      const result = await supabase
+        .from('feed_sources')
+        .select('*')
+        .eq('type', 'rss')
+        .eq('is_active', true)
+      
+      feeds = result.data
+      error = result.error
+    }
 
     if (error) {
       console.error('Error fetching feeds:', error)

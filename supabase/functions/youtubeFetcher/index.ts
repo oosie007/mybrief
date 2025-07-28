@@ -53,6 +53,45 @@ function extractChannelId(url: string): string | null {
   return null;
 }
 
+// Get channel details including profile picture
+async function getChannelDetails(channelId: string): Promise<{ title: string; profilePicture: string } | null> {
+  if (!YOUTUBE_API_KEY) {
+    console.warn('YouTube API key not configured');
+    return null;
+  }
+
+  try {
+    console.log(`Getting channel details for: ${channelId}`);
+    
+    const response = await fetch(
+      `https://www.googleapis.com/youtube/v3/channels?part=snippet&id=${channelId}&key=${YOUTUBE_API_KEY}`
+    );
+
+    if (!response.ok) {
+      console.error('Failed to get channel details:', response.status, response.statusText);
+      return null;
+    }
+
+    const data = await response.json();
+    console.log(`Channel details response for ${channelId}:`, data);
+    
+    if (data.items && data.items.length > 0) {
+      const channel = data.items[0];
+      const title = channel.snippet.title;
+      const profilePicture = channel.snippet.thumbnails?.default?.url || channel.snippet.thumbnails?.medium?.url;
+      
+      console.log(`Found channel details for ${channelId}: ${title}, profile picture: ${profilePicture}`);
+      return { title, profilePicture };
+    }
+    
+    console.log(`No channel details found for: ${channelId}`);
+    return null;
+  } catch (error) {
+    console.error('Error getting channel details:', error);
+    return null;
+  }
+}
+
 // Get channel ID using channel username (using search instead of deprecated forUsername)
 async function getChannelIdFromUsername(username: string): Promise<string | null> {
   if (!YOUTUBE_API_KEY) {
@@ -182,12 +221,37 @@ serve(async (req) => {
   try {
     console.log('YouTube Fetcher started')
 
-    // Get all active YouTube feed sources
-    const { data: feeds, error } = await supabase
-      .from('feed_sources')
-      .select('*')
-      .eq('type', 'youtube')
-      .eq('is_active', true)
+    // Check if this is an immediate fetch for a specific feed
+    const body = await req.json().catch(() => ({}))
+    const { feedSourceId, immediate } = body
+    
+    let feeds
+    let error
+    
+    if (immediate && feedSourceId) {
+      // Fetch specific feed for immediate processing
+      console.log(`Immediate fetch requested for feed source: ${feedSourceId}`)
+      const result = await supabase
+        .from('feed_sources')
+        .select('*')
+        .eq('id', feedSourceId)
+        .eq('type', 'youtube')
+        .eq('is_active', true)
+        .single()
+      
+      feeds = result.data ? [result.data] : []
+      error = result.error
+    } else {
+      // Get all active YouTube feed sources (scheduled fetch)
+      const result = await supabase
+        .from('feed_sources')
+        .select('*')
+        .eq('type', 'youtube')
+        .eq('is_active', true)
+      
+      feeds = result.data
+      error = result.error
+    }
 
     if (error) {
       console.error('Error fetching feeds:', error)
@@ -239,6 +303,21 @@ serve(async (req) => {
         }
 
         console.log(`Channel ID for ${feed.name}: ${channelId}`);
+
+        // Get channel details including profile picture
+        const channelDetails = await getChannelDetails(channelId);
+        if (channelDetails) {
+          console.log(`Channel details for ${feed.name}: ${channelDetails.title}, profile picture: ${channelDetails.profilePicture}`);
+          
+          // Update the feed source with the actual channel name and profile picture
+          await supabase
+            .from('feed_sources')
+            .update({
+              name: channelDetails.title,
+              favicon_url: channelDetails.profilePicture
+            })
+            .eq('id', feed.id);
+        }
 
         const videos = await fetchChannelVideos(channelId, 25);
         console.log(`Found ${videos.length} videos for ${feed.name}`);

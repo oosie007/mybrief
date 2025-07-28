@@ -152,6 +152,20 @@ export const getFeedSourceFavicon = (sourceName: string, sourceUrl?: string): st
     return 'https://www.google.com/s2/favicons?domain=reddit.com&sz=32';
   }
 
+  // Check if it's a YouTube URL - use actual channel profile pictures
+  if (sourceUrl && sourceUrl.includes('youtube.com')) {
+    const channelMatch = sourceUrl.match(/youtube\.com\/@([^\/\?]+)/);
+    if (channelMatch) {
+      const channelId = channelMatch[1];
+      
+      // For YouTube channels, we'll use the stored profile picture from the database
+      // This will be updated by the YouTube fetcher with the actual channel profile picture
+      // For now, fallback to YouTube's favicon
+      return `https://www.google.com/s2/favicons?domain=youtube.com&sz=32`;
+    }
+    return 'https://www.google.com/s2/favicons?domain=youtube.com&sz=32';
+  }
+
   // Fallback to generic favicon service
   if (sourceUrl) {
     return getFaviconUrl(sourceUrl);

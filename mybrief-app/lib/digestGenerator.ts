@@ -12,6 +12,7 @@ export interface ContentItem {
   feed_sources: {
     name: string;
     type: string;
+    favicon_url?: string;
   };
   // Reddit-specific fields
   score?: number;
@@ -73,7 +74,8 @@ export async function aggregateUserContent(
         feed_sources (
           id,
           name,
-          type
+          type,
+          favicon_url
         )
       `)
       .eq('user_id', userId)
@@ -130,7 +132,8 @@ export async function aggregateUserContent(
         feed_source_id,
         feed_sources (
           name,
-          type
+          type,
+          favicon_url
         ),
         author,
         score,
@@ -174,7 +177,8 @@ export async function aggregateUserContent(
       feed_source_id: item.feed_source_id,
       feed_sources: {
         name: (item.feed_sources as any)?.name || 'Unknown',
-        type: (item.feed_sources as any)?.type || 'rss'
+        type: (item.feed_sources as any)?.type || 'rss',
+        favicon_url: (item.feed_sources as any)?.favicon_url || undefined
       },
       author: item.author,
       score: item.score,
@@ -298,7 +302,8 @@ export async function getUndigestedContent(userId: string): Promise<ContentItem[
         feed_source_id,
         feed_sources (
           name,
-          type
+          type,
+          favicon_url
         ),
         author,
         score,
@@ -389,7 +394,8 @@ export async function debugContent() {
         feed_source_id,
         feed_sources (
           name,
-          type
+          type,
+          favicon_url
         )
       `)
       .order('published_at', { ascending: false })

@@ -175,12 +175,37 @@ serve(async (req) => {
   try {
     console.log('Reddit Fetcher started');
     
-    // Get all active Reddit feed sources
-    const { data: feedSources, error: feedsError } = await supabase
-      .from('feed_sources')
-      .select('id, name, url')
-      .eq('type', 'reddit')
-      .eq('is_active', true);
+    // Check if this is an immediate fetch for a specific feed
+    const body = await req.json().catch(() => ({}))
+    const { feedSourceId, immediate } = body
+    
+    let feedSources
+    let feedsError
+    
+    if (immediate && feedSourceId) {
+      // Fetch specific feed for immediate processing
+      console.log(`Immediate fetch requested for feed source: ${feedSourceId}`)
+      const result = await supabase
+        .from('feed_sources')
+        .select('id, name, url')
+        .eq('id', feedSourceId)
+        .eq('type', 'reddit')
+        .eq('is_active', true)
+        .single()
+      
+      feedSources = result.data ? [result.data] : []
+      feedsError = result.error
+    } else {
+      // Get all active Reddit feed sources (scheduled fetch)
+      const result = await supabase
+        .from('feed_sources')
+        .select('id, name, url')
+        .eq('type', 'reddit')
+        .eq('is_active', true)
+      
+      feedSources = result.data
+      feedsError = result.error
+    }
 
     if (feedsError) {
       console.error('Error fetching Reddit feed sources:', feedsError);

@@ -440,9 +440,11 @@ const DigestScreen = ({ navigation }: any) => {
   };
 
   const getSourceIcon = (source: string, type: string, sourceUrl?: string) => {
-    // For YouTube videos, use a consistent generic YouTube icon
+    // For YouTube videos, use the stored profile picture from the database
     if (type === 'youtube') {
-      return 'https://www.google.com/s2/favicons?domain=youtube.com&sz=32';
+      // Force YouTube to use the stored profile picture
+      // If no stored favicon, fallback to favicon service
+      return getFeedSourceFavicon(source, sourceUrl);
     }
     
     // For other content types, get the actual favicon URL for this source
@@ -531,9 +533,16 @@ const DigestScreen = ({ navigation }: any) => {
         <View style={styles.cardHeader}>
           <View style={styles.sourceInfo}>
             <Image
-              source={{ uri: getSourceIcon(item.feed_sources?.name || '', item.feed_sources?.type || '', item.url) }}
+              source={{ 
+                uri: item.feed_sources?.type === 'youtube' && item.feed_sources?.favicon_url 
+                  ? item.feed_sources.favicon_url 
+                  : getSourceIcon(item.feed_sources?.name || '', item.feed_sources?.type || '', item.url) 
+              }}
               style={styles.sourceIcon}
+              onError={(error) => console.log('Image load error:', error.nativeEvent.error)}
+              onLoad={() => console.log('Image loaded successfully for:', item.feed_sources?.name)}
             />
+
             <Text style={[styles.sourceText, { color: theme.textSecondary }]}>
               {item.feed_sources?.name || 'Unknown'}
             </Text>
@@ -638,7 +647,10 @@ const DigestScreen = ({ navigation }: any) => {
         <View style={styles.cardHeader}>
           <View style={styles.sourceInfo}>
             <Image
-              source={{ uri: getSourceIcon(item.feed_sources?.name || '', 'youtube', item.url) }}
+              source={{ 
+                uri: item.feed_sources?.favicon_url || 
+                      getSourceIcon(item.feed_sources?.name || '', 'youtube', item.url) 
+              }}
               style={styles.sourceIcon}
             />
             <Text style={[styles.sourceText, { color: theme.textSecondary }]}>

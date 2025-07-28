@@ -56,7 +56,8 @@ const FeedManagementScreen = ({ navigation }: any) => {
   const [selectedFeedType, setSelectedFeedType] = useState<string | null>(null);
   const [newFeedName, setNewFeedName] = useState('');
   const [newFeedUrl, setNewFeedUrl] = useState('');
-  const [addingFeed, setAddingFeed] = useState(false);
+
+  const [fetchingFeeds, setFetchingFeeds] = useState<Set<string>>(new Set());
 
   // Function to extract feed name from URL
   const extractFeedNameFromUrl = (url: string, type: string): string => {
@@ -184,7 +185,8 @@ const FeedManagementScreen = ({ navigation }: any) => {
             name,
             url,
             type,
-            is_active
+            is_active,
+            favicon_url
           )
         `)
         .eq('user_id', user.id)
@@ -213,8 +215,6 @@ const FeedManagementScreen = ({ navigation }: any) => {
     }
 
     try {
-      setAddingFeed(true);
-
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         Alert.alert('Error', 'User not authenticated');
@@ -273,24 +273,83 @@ const FeedManagementScreen = ({ navigation }: any) => {
         return;
       }
 
-      // Reset form
+      // Reset form first
       setNewFeedName('');
       setNewFeedUrl('');
       setSelectedFeedType(null);
+      
+      // Switch to my-feeds tab immediately
       setActiveTab('my-feeds');
       
-      // Show success message
-      Alert.alert('Success', 'Feed added successfully!');
-
-      // Refresh feeds
+      // Refresh feeds to show the new feed
       await fetchFeeds();
+      
+      // Trigger immediate content fetch for the new feed (in background, don't await)
+      triggerImmediateContentFetch(feedSource.id, selectedFeedType).catch(error => {
+        console.error('Background content fetch failed:', error);
+      });
 
-      Alert.alert('Success', 'Feed added successfully!');
     } catch (error) {
       console.error('Error adding feed:', error);
       Alert.alert('Error', 'Failed to add feed');
+    }
+  };
+
+  // Function to trigger immediate content fetch for a new feed
+  const triggerImmediateContentFetch = async (feedSourceId: string, feedType: string) => {
+    try {
+      console.log(`Triggering immediate content fetch for ${feedType} feed: ${feedSourceId}`);
+      
+      // Add to fetching state
+      setFetchingFeeds(prev => new Set([...prev, feedSourceId]));
+      
+      // Call the appropriate edge function based on feed type
+      const functionName = `${feedType}Fetcher`;
+      const response = await fetch(
+        `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/${functionName}`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            feedSourceId: feedSourceId,
+            immediate: true
+          })
+        }
+      );
+
+      if (!response.ok) {
+        console.error(`Failed to trigger ${feedType} fetcher:`, response.status);
+      } else {
+        console.log(`Successfully triggered ${feedType} content fetch`);
+        
+        // For YouTube feeds, wait a bit and then refresh to get updated favicon
+        if (feedType === 'youtube') {
+          setTimeout(async () => {
+            try {
+              console.log('Refreshing feeds to get updated YouTube favicon...');
+              await fetchFeeds(); // Refresh feeds to get updated favicon
+              console.log('Feeds refreshed, favicon should now be updated');
+            } catch (error) {
+              console.error('Error refreshing feeds after YouTube fetch:', error);
+            }
+          }, 1000); // Wait 1 second for YouTube fetcher to update favicon
+        }
+      }
+    } catch (error) {
+      console.error(`Error triggering ${feedType} content fetch:`, error);
+      // Don't show error to user as this is background process
     } finally {
-      setAddingFeed(false);
+      // Remove from fetching state after a delay to show loading
+      setTimeout(() => {
+        setFetchingFeeds(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(feedSourceId);
+          return newSet;
+        });
+      }, 3000); // Show loading for 3 seconds
     }
   };
 
@@ -328,6 +387,14 @@ const FeedManagementScreen = ({ navigation }: any) => {
   };
 
   const getSourceIcon = (source: string, type: string, sourceUrl?: string) => {
+    // For YouTube feeds, check if we have a stored profile picture
+    if (type === 'youtube') {
+      // The profile picture should be stored in the feed_sources table
+      // For now, we'll use the favicon service
+      return getFeedSourceFavicon(source, sourceUrl);
+    }
+    
+    // For other feed types, use the favicon service
     return getFeedSourceFavicon(source, sourceUrl);
   };
 
@@ -359,75 +426,136 @@ const FeedManagementScreen = ({ navigation }: any) => {
     return parts.join(', ') || 'No feeds';
   };
 
-  const MyFeedsScreen = () => (
-    <View style={styles.screen}>
-      <View style={styles.screenHeader}>
-        <Text style={[styles.title, { color: theme.text }]}>My Feeds</Text>
-        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-          {formatFeedCount(feeds)}
-        </Text>
-      </View>
+  const MyFeedsScreen = () => {
+    // Group feeds by type
+    const groupedFeeds = feeds.reduce((acc, feed) => {
+      const type = feed.feed_sources?.type || 'unknown';
+      if (!acc[type]) {
+        acc[type] = [];
+      }
+      acc[type].push(feed);
+      return acc;
+    }, {} as Record<string, any[]>);
 
-      {feeds.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Ionicons name="add-circle-outline" size={64} color={theme.textMuted} />
-          <Text style={[styles.emptyTitle, { color: theme.text }]}>No feeds yet</Text>
-          <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
-            Add your first feed to get started
+    // Define feed type sections in order
+    const feedTypeSections = [
+      { type: 'rss', label: 'RSS Feeds', icon: 'globe', color: '#ff6600' },
+      { type: 'youtube', label: 'YouTube Channels', icon: 'play-circle', color: '#ff0000' },
+      { type: 'reddit', label: 'Reddit Communities', icon: 'people', color: '#ff4500' },
+    ];
+
+    return (
+      <View style={styles.screen}>
+        <View style={styles.screenHeader}>
+          <Text style={[styles.title, { color: theme.text }]}>My Feeds</Text>
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+            {formatFeedCount(feeds)}
           </Text>
-          <TouchableOpacity
-            style={[styles.addFirstButton, { backgroundColor: theme.accent }]}
-            onPress={() => setActiveTab('add-feed')}
-          >
-            <Text style={[styles.addFirstButtonText, { color: theme.accentText }]}>
-              Add Your First Feed
-            </Text>
-          </TouchableOpacity>
         </View>
-      ) : (
-        <FlatList
-          data={feeds}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <View style={[styles.feedCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-              <View style={styles.feedCardHeader}>
-                <Image
-                  source={{ uri: getSourceIcon(item.feed_sources?.name || '', item.feed_sources?.type || '', item.feed_sources?.url) }}
-                  style={styles.feedIcon}
-                />
-                <View style={styles.feedInfo}>
-                  <Text style={[styles.feedName, { color: theme.text }]}>
-                    {item.feed_sources?.name || 'Unknown'}
-                  </Text>
-                  <Text style={[styles.feedUrl, { color: theme.textSecondary }]} numberOfLines={1}>
-                    {item.feed_sources?.url || ''}
-                  </Text>
-                  <View style={styles.feedTypeContainer}>
-                                         <Ionicons 
-                       name={(FEED_TYPES.find(t => t.type === item.feed_sources?.type)?.icon || 'globe') as any} 
-                       size={12} 
-                       color={getSourceColor(item.feed_sources?.type || '')} 
-                     />
-                    <Text style={[styles.feedType, { color: getSourceColor(item.feed_sources?.type || '') }]}>
-                      {FEED_TYPES.find(t => t.type === item.feed_sources?.type)?.label || 'Unknown'}
-                    </Text>
+
+        {feeds.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="add-circle-outline" size={64} color={theme.textMuted} />
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>No feeds yet</Text>
+            <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
+              Add your first feed to get started
+            </Text>
+            <TouchableOpacity
+              style={[styles.addFirstButton, { backgroundColor: theme.accent }]}
+              onPress={() => setActiveTab('add-feed')}
+            >
+              <Text style={[styles.addFirstButtonText, { color: theme.accentText }]}>
+                Add Your First Feed
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <FlatList
+            data={feedTypeSections}
+            keyExtractor={(section) => section.type}
+            renderItem={({ item: section }) => {
+              const sectionFeeds = groupedFeeds[section.type] || [];
+              if (sectionFeeds.length === 0) return null;
+
+              return (
+                <View key={section.type}>
+                  {/* Section Header */}
+                  <View style={styles.sectionHeader}>
+                    <View style={styles.sectionHeaderLeft}>
+                      <Ionicons 
+                        name={section.icon as any} 
+                        size={16} 
+                        color={section.color} 
+                      />
+                      <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                        {section.label}
+                      </Text>
+                      <Text style={[styles.sectionCount, { color: theme.textSecondary }]}>
+                        ({sectionFeeds.length})
+                      </Text>
+                    </View>
                   </View>
+
+                  {/* Section Feeds */}
+                  {sectionFeeds.map((feed: any) => {
+                    const isFetching = fetchingFeeds.has(feed.feed_sources?.id);
+                    
+                    return (
+                      <View key={feed.id} style={[styles.feedCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+                        <View style={styles.feedCardHeader}>
+                          <Image
+                            source={{ 
+                              uri: feed.feed_sources?.favicon_url || 
+                                    getSourceIcon(feed.feed_sources?.name || '', feed.feed_sources?.type || '', feed.feed_sources?.url) 
+                            }}
+                            style={styles.feedIcon}
+                          />
+                          <View style={styles.feedInfo}>
+                            <Text style={[styles.feedName, { color: theme.text }]}>
+                              {feed.feed_sources?.name || 'Unknown'}
+                            </Text>
+                            <Text style={[styles.feedUrl, { color: theme.textSecondary }]} numberOfLines={1}>
+                              {feed.feed_sources?.url || ''}
+                            </Text>
+                            <View style={styles.feedTypeContainer}>
+                              <Ionicons 
+                                name={(FEED_TYPES.find(t => t.type === feed.feed_sources?.type)?.icon || 'globe') as any} 
+                                size={12} 
+                                color={getSourceColor(feed.feed_sources?.type || '')} 
+                              />
+                              <Text style={[styles.feedType, { color: getSourceColor(feed.feed_sources?.type || '') }]}>
+                                {FEED_TYPES.find(t => t.type === feed.feed_sources?.type)?.label || 'Unknown'}
+                              </Text>
+                              {isFetching && (
+                                <View style={styles.fetchingIndicator}>
+                                  <ActivityIndicator size={12} color={theme.accent} />
+                                  <Text style={[styles.fetchingText, { color: theme.accent }]}>
+                                    Fetching...
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                          </View>
+                          <TouchableOpacity
+                            style={styles.removeButton}
+                            onPress={() => handleRemoveFeed(feed.id)}
+                          >
+                            <Ionicons name="trash-outline" size={20} color={theme.textMuted} />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    );
+                  })}
                 </View>
-                <TouchableOpacity
-                  style={styles.removeButton}
-                  onPress={() => handleRemoveFeed(item.id)}
-                >
-                  <Ionicons name="trash-outline" size={20} color={theme.textMuted} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-          contentContainerStyle={styles.feedsList}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
-    </View>
-  );
+              );
+            }}
+            contentContainerStyle={styles.feedsList}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
+      </View>
+    );
+  };
 
   const AddFeedScreen = () => (
     <View style={styles.screen}>
@@ -523,18 +651,14 @@ const FeedManagementScreen = ({ navigation }: any) => {
                 (!newFeedName.trim() || !newFeedUrl.trim()) && { opacity: 0.5 }
               ]}
               onPress={handleAddFeed}
-              disabled={!newFeedName.trim() || !newFeedUrl.trim() || addingFeed}
+              disabled={!newFeedName.trim() || !newFeedUrl.trim()}
             >
-              {addingFeed ? (
-                <ActivityIndicator color={theme.accentText} />
-              ) : (
-                <>
-                  <Ionicons name="add" size={20} color={theme.accentText} />
-                  <Text style={[styles.addButtonText, { color: theme.accentText }]}>
-                    Add Feed
-                  </Text>
-                </>
-              )}
+              <>
+                <Ionicons name="add" size={20} color={theme.accentText} />
+                <Text style={[styles.addButtonText, { color: theme.accentText }]}>
+                  Add Feed
+                </Text>
+              </>
             </TouchableOpacity>
           </View>
         )}
@@ -734,16 +858,30 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 6,
   },
+  sectionHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  sectionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  sectionCount: {
+    fontSize: 14,
+    marginLeft: 4,
+  },
   addFeedContainer: {
     paddingBottom: 20,
   },
   section: {
     marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 16,
   },
   inputGroup: {
     marginBottom: 16,
@@ -816,6 +954,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+  },
+  fetchingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+    gap: 4,
+  },
+  fetchingText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
   feedTypeIcon: {
     width: 40,
