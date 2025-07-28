@@ -18,262 +18,156 @@ import { LoadingState, ErrorState, NoFeedsState } from '../components/UIStates';
 import { getFeedSourceFavicon } from '../lib/faviconService';
 
 const FEED_TYPES = [
-  { type: 'rss', label: 'RSS Feed', icon: 'globe' },
-  { type: 'youtube', label: 'YouTube', icon: 'logo-youtube' },
-  { type: 'reddit', label: 'Reddit', icon: 'logo-reddit' },
-  { type: 'twitter', label: 'X/Twitter', icon: 'logo-twitter' },
-];
-
-const templatePacks = [
-  {
-    id: 'tech',
-    name: 'Tech Entrepreneur',
-    description: 'Stay ahead with startup news, tech trends, and business insights',
-    feeds: [
-      { type: 'rss', url: 'https://techcrunch.com/feed/', name: 'TechCrunch' },
-      { type: 'rss', url: 'https://www.theverge.com/rss/index.xml', name: 'The Verge' },
-      { type: 'rss', url: 'https://www.wired.com/feed/rss', name: 'Wired' },
-      { type: 'rss', url: 'https://feeds.arstechnica.com/arstechnica/index', name: 'Ars Technica' },
-    ],
-    subscribers: '12.3k',
-    isPopular: true,
+  { 
+    type: 'rss', 
+    label: 'RSS Feed', 
+    icon: 'globe',
+    description: 'News websites, blogs, podcasts',
+    placeholder: 'https://example.com/feed.xml',
+    examples: ['TechCrunch', 'The Verge', 'Wired']
   },
-  {
-    id: 'reddit-tech',
-    name: 'Reddit Tech',
-    description: 'Top tech discussions from Reddit communities',
-    feeds: [
-      { type: 'reddit', url: 'https://reddit.com/r/technology', name: 'r/technology' },
-      { type: 'reddit', url: 'https://reddit.com/r/programming', name: 'r/programming' },
-      { type: 'reddit', url: 'https://reddit.com/r/webdev', name: 'r/webdev' },
-      { type: 'reddit', url: 'https://reddit.com/r/javascript', name: 'r/javascript' },
-      { type: 'reddit', url: 'https://reddit.com/r/reactjs', name: 'r/reactjs' },
-    ],
-    subscribers: '18.2k',
-    isPopular: true,
+  { 
+    type: 'youtube', 
+    label: 'YouTube Channel', 
+    icon: 'logo-youtube',
+    description: 'YouTube channels and creators',
+    placeholder: 'https://www.youtube.com/@channelname',
+    examples: ['@TechCrunch', '@TheVerge', '@WIRED']
   },
-  {
-    id: 'reddit-startups',
-    name: 'Reddit Startups',
-    description: 'Entrepreneurship and business insights from Reddit',
-    feeds: [
-      { type: 'reddit', url: 'https://reddit.com/r/startups', name: 'r/startups' },
-      { type: 'reddit', url: 'https://reddit.com/r/entrepreneur', name: 'r/entrepreneur' },
-      { type: 'reddit', url: 'https://reddit.com/r/business', name: 'r/business' },
-      { type: 'reddit', url: 'https://reddit.com/r/investing', name: 'r/investing' },
-    ],
-    subscribers: '14.7k',
-    isPopular: true,
-  },
-  {
-    id: 'reddit-ai',
-    name: 'Reddit AI & ML',
-    description: 'Latest in artificial intelligence and machine learning',
-    feeds: [
-      { type: 'reddit', url: 'https://reddit.com/r/MachineLearning', name: 'r/MachineLearning' },
-      { type: 'reddit', url: 'https://reddit.com/r/artificial', name: 'r/artificial' },
-      { type: 'reddit', url: 'https://reddit.com/r/OpenAI', name: 'r/OpenAI' },
-      { type: 'reddit', url: 'https://reddit.com/r/StableDiffusion', name: 'r/StableDiffusion' },
-    ],
-    subscribers: '16.9k',
-    isPopular: true,
-  },
-  {
-    id: 'reddit-news',
-    name: 'Reddit News',
-    description: 'Breaking news and current events from Reddit',
-    feeds: [
-      { type: 'reddit', url: 'https://reddit.com/r/worldnews', name: 'r/worldnews' },
-      { type: 'reddit', url: 'https://reddit.com/r/news', name: 'r/news' },
-      { type: 'reddit', url: 'https://reddit.com/r/science', name: 'r/science' },
-      { type: 'reddit', url: 'https://reddit.com/r/Futurology', name: 'r/Futurology' },
-    ],
-    subscribers: '22.1k',
-    isPopular: true,
-  },
-  {
-    id: 'adhd',
-    name: 'ADHD Focus',
-    description: 'Productivity tips, focus techniques, and neurodivergent-friendly content',
-    feeds: [
-      { type: 'rss', url: 'https://additudemag.com/feed/', name: 'ADDitude Magazine' },
-      { type: 'rss', url: 'https://www.psychologytoday.com/us/blog/feed', name: 'Psychology Today' },
-    ],
-    subscribers: '8.7k',
-    isPopular: false,
-  },
-  {
-    id: 'dev',
-    name: 'Developer Daily',
-    description: 'Programming tutorials, tech news, and developer community discussions',
-    feeds: [
-      { type: 'rss', url: 'https://dev.to/feed', name: 'Dev.to' },
-      { type: 'rss', url: 'https://news.ycombinator.com/rss', name: 'Hacker News' },
-    ],
-    subscribers: '15.1k',
-    isPopular: true,
+  { 
+    type: 'reddit', 
+    label: 'Reddit Community', 
+    icon: 'logo-reddit',
+    description: 'Reddit subreddits and communities',
+    placeholder: 'https://reddit.com/r/subreddit',
+    examples: ['r/technology', 'r/programming', 'r/startups']
   },
 ];
 
 const FeedManagementScreen = ({ navigation }: any) => {
   const { theme, isDarkMode } = useTheme();
-  const [currentScreen, setCurrentScreen] = useState('main'); // main, template-packs, add-feed
   const [feeds, setFeeds] = useState<any[]>([]);
-  const [feedType, setFeedType] = useState('rss');
-  const [feedUrl, setFeedUrl] = useState('');
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [bulkLoading, setBulkLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'my-feeds' | 'add-feed'>('my-feeds');
+  const [selectedFeedType, setSelectedFeedType] = useState<string | null>(null);
+  const [newFeedName, setNewFeedName] = useState('');
+  const [newFeedUrl, setNewFeedUrl] = useState('');
+  const [addingFeed, setAddingFeed] = useState(false);
 
   useEffect(() => {
     fetchFeeds();
   }, []);
 
   const fetchFeeds = async () => {
-    setLoading(true);
-    setError('');
-    setLoadError(null);
     try {
-      // Get current user
+      setLoading(true);
+      setError(null);
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        setLoadError('User not logged in');
+        setError('User not authenticated');
         return;
       }
 
-      // Fetch user's subscribed feeds with feed source details
-      const { data: userFeeds, error: feedsError } = await supabase
+      const { data: userFeeds, error } = await supabase
         .from('user_feeds')
         .select(`
-          id,
-          is_active,
-          feed_source_id,
+          *,
           feed_sources (
             id,
             name,
             url,
-            type
+            type,
+            is_active
           )
         `)
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .order('id', { ascending: false });
 
-      if (feedsError) {
-        console.error('Error fetching user feeds:', feedsError);
-        setLoadError('Failed to load feeds');
+      if (error) {
+        console.error('Error fetching feeds:', error);
+        setError('Failed to load feeds');
         return;
       }
 
       setFeeds(userFeeds || []);
     } catch (error) {
-      console.error('Error in fetchFeeds:', error);
-      setLoadError('Failed to load feeds');
+      console.error('Error fetching feeds:', error);
+      setError('Failed to load feeds');
     } finally {
       setLoading(false);
     }
   };
 
   const handleAddFeed = async () => {
-    if (!feedUrl.trim()) return;
-    
-    setSaving(true);
-    setError('');
-    
+    if (!newFeedName.trim() || !newFeedUrl.trim() || !selectedFeedType) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
     try {
-      // Get current user
+      setAddingFeed(true);
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        setError('User not logged in');
+        Alert.alert('Error', 'User not authenticated');
         return;
       }
 
-      // First, check if feed source already exists
-      let { data: existingFeed, error: feedError } = await supabase
+      // First, create or get the feed source
+      const { data: feedSource, error: feedSourceError } = await supabase
         .from('feed_sources')
-        .select('*')
-        .eq('url', feedUrl.trim())
+        .upsert({
+          name: newFeedName.trim(),
+          url: newFeedUrl.trim(),
+          type: selectedFeedType,
+          is_active: true,
+        }, { onConflict: 'url' })
+        .select()
         .single();
 
-      let feedSourceId: string;
-
-      if (feedError && feedError.code === 'PGRST116') {
-        // Feed source doesn't exist, create it
-        const { data: newFeed, error: createError } = await supabase
-          .from('feed_sources')
-          .insert({
-            name: feedUrl.split('/').pop() || feedUrl,
-            url: feedUrl.trim(),
-            type: feedType,
-            is_active: true
-          })
-          .select()
-          .single();
-
-        if (createError) {
-          console.error('Error creating feed source:', createError);
-          setError('Failed to create feed source');
-          return;
-        }
-        feedSourceId = newFeed.id;
-      } else if (feedError) {
-        console.error('Error checking feed source:', feedError);
-        setError('Failed to check feed source');
+      if (feedSourceError) {
+        console.error('Error creating feed source:', feedSourceError);
+        Alert.alert('Error', 'Failed to create feed source');
         return;
-      } else {
-        feedSourceId = existingFeed.id;
       }
 
-      // Check if user already subscribes to this feed
-      const { data: existingSubscription } = await supabase
+      // Then, link it to the user
+      const { error: userFeedError } = await supabase
         .from('user_feeds')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('feed_source_id', feedSourceId)
-        .single();
+        .insert({
+          user_id: user.id,
+          feed_source_id: feedSource.id,
+          is_active: true,
+        });
 
-      if (existingSubscription) {
-        // Update existing subscription to active
-        const { error: updateError } = await supabase
-          .from('user_feeds')
-          .update({ is_active: true })
-          .eq('id', existingSubscription.id);
-
-        if (updateError) {
-          console.error('Error updating subscription:', updateError);
-          setError('Failed to update subscription');
-          return;
-        }
-      } else {
-        // Create new subscription
-        const { error: subscribeError } = await supabase
-          .from('user_feeds')
-          .insert({
-            user_id: user.id,
-            feed_source_id: feedSourceId,
-            is_active: true
-          });
-
-        if (subscribeError) {
-          console.error('Error subscribing to feed:', subscribeError);
-          setError('Failed to subscribe to feed');
-          return;
-        }
+      if (userFeedError) {
+        console.error('Error linking feed to user:', userFeedError);
+        Alert.alert('Error', 'Failed to add feed to your account');
+        return;
       }
 
-      // Refresh feeds list
+      // Reset form
+      setNewFeedName('');
+      setNewFeedUrl('');
+      setSelectedFeedType(null);
+      setActiveTab('my-feeds');
+
+      // Refresh feeds
       await fetchFeeds();
-      setFeedUrl('');
+
       Alert.alert('Success', 'Feed added successfully!');
     } catch (error) {
       console.error('Error adding feed:', error);
-      setError('Failed to add feed');
+      Alert.alert('Error', 'Failed to add feed');
     } finally {
-      setSaving(false);
+      setAddingFeed(false);
     }
   };
 
-  const handleRemoveFeed = async (feedSourceId: string) => {
+  const handleRemoveFeed = async (userFeedId: string) => {
     Alert.alert(
       'Remove Feed',
       'Are you sure you want to remove this feed?',
@@ -283,38 +177,22 @@ const FeedManagementScreen = ({ navigation }: any) => {
           text: 'Remove',
           style: 'destructive',
           onPress: async () => {
-            setSaving(true);
-            setError('');
-            
             try {
-              // Get current user
-              const { data: { user } } = await supabase.auth.getUser();
-              if (!user) {
-                setError('User not logged in');
-                return;
+                             const { error } = await supabase
+                 .from('user_feeds')
+                 .update({ is_active: false })
+                 .eq('id', userFeedId);
+
+              if (error) {
+                console.error('Error removing feed:', error);
+                Alert.alert('Error', 'Failed to remove feed');
+              } else {
+                await fetchFeeds();
+                Alert.alert('Success', 'Feed removed successfully!');
               }
-
-              // Deactivate the user's subscription to this feed
-              const { error: updateError } = await supabase
-                .from('user_feeds')
-                .update({ is_active: false })
-                .eq('user_id', user.id)
-                .eq('feed_source_id', feedSourceId);
-
-              if (updateError) {
-                console.error('Error removing feed:', updateError);
-                setError('Failed to remove feed');
-                return;
-              }
-
-              // Refresh feeds list
-              await fetchFeeds();
-              Alert.alert('Success', 'Feed removed successfully!');
             } catch (error) {
               console.error('Error removing feed:', error);
-              setError('Failed to remove feed');
-            } finally {
-              setSaving(false);
+              Alert.alert('Error', 'Failed to remove feed');
             }
           },
         },
@@ -322,437 +200,289 @@ const FeedManagementScreen = ({ navigation }: any) => {
     );
   };
 
-  const handleAddPack = async (pack: any) => {
-    setBulkLoading(true);
-    setError('');
-    
-    try {
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setError('User not logged in');
-        return;
-      }
-
-      console.log('Adding pack:', pack.name, 'for user:', user.id);
-
-      // Process each feed in the pack
-      for (const feed of pack.feeds) {
-        console.log('Processing feed:', feed.name, feed.url);
-        
-        // Check if feed source exists
-        let { data: existingFeed } = await supabase
-          .from('feed_sources')
-          .select('*')
-          .eq('url', feed.url)
-          .single();
-
-        let feedSourceId: string;
-
-        if (!existingFeed) {
-          console.log('Creating new feed source:', feed.name);
-          // Create feed source
-          const { data: newFeed, error: createError } = await supabase
-            .from('feed_sources')
-            .insert({
-              name: feed.name,
-              url: feed.url,
-              type: feed.type,
-              is_active: true
-            })
-            .select()
-            .single();
-          
-          if (createError) {
-            console.error('Error creating feed source:', createError);
-            continue;
-          }
-          feedSourceId = newFeed.id;
-          console.log('Created feed source with ID:', feedSourceId);
-        } else {
-          feedSourceId = existingFeed.id;
-          console.log('Using existing feed source ID:', feedSourceId);
-        }
-
-        // Subscribe user to feed (ignore if already subscribed)
-        const { error: subscribeError } = await supabase
-          .from('user_feeds')
-          .upsert({
-            user_id: user.id,
-            feed_source_id: feedSourceId,
-            is_active: true
-          }, { onConflict: 'user_id,feed_source_id' });
-
-        if (subscribeError) {
-          console.error('Error subscribing to feed:', subscribeError);
-        } else {
-          console.log('Successfully subscribed to feed:', feed.name);
-        }
-      }
-
-      // Refresh feeds list
-      await fetchFeeds();
-      Alert.alert('Success', `${pack.name} template pack added successfully!`);
-    } catch (error) {
-      console.error('Error adding pack:', error);
-      setError('Failed to add template pack');
-    } finally {
-      setBulkLoading(false);
-    }
-  };
-
   const getSourceIcon = (source: string, type: string, sourceUrl?: string) => {
-    // Get the actual favicon URL for this source
     return getFeedSourceFavicon(source, sourceUrl);
   };
 
-  const getSourceColor = (source: string, type: string): string => {
-    // Specific colors for known feed sources
-    const sourceColors: { [key: string]: string } = {
-      'TechCrunch': '#00C851', // TechCrunch green
-      'The Verge': '#000000', // The Verge black
-      'Wired': '#FF6B35', // Wired orange
-      'Ars Technica': '#FF6600', // Ars Technica orange
-      'Hacker News': '#FF6600', // HN orange
-      'Bloomberg': '#000000', // Bloomberg black
-      'Reddit': '#ff4500',
-      'YouTube': '#ff0000',
-      'Twitter': '#1da1f2',
-    };
-
-    // Check if we have a specific color for this source
-    if (sourceColors[source]) {
-      return sourceColors[source];
+  const getSourceColor = (type: string): string => {
+    switch (type) {
+      case 'rss':
+        return '#ff6600';
+      case 'youtube':
+        return '#ff0000';
+      case 'reddit':
+        return '#ff4500';
+      default:
+        return theme.textSecondary;
     }
-
-    // Fallback to type-based colors
-    if (type === 'rss') {
-      if (source.includes('techcrunch')) return '#10b981';
-      if (source.includes('theverge')) return '#9333ea';
-      if (source.includes('bloomberg')) return '#1e3a8a';
-      if (source.includes('wired')) return '#000000';
-    }
-    
-    if (type === 'reddit') return '#f97316';
-    if (type === 'youtube') return '#ef4444';
-    if (type === 'twitter') return '#1da1f2';
-    
-    return '#9ca3af';
   };
 
-  // Template Packs Screen
-  const TemplatePacksScreen = () => (
-    <View style={[styles.screenContainer, { backgroundColor: theme.background }]}>
-      <View style={[styles.header, { backgroundColor: theme.headerBg, borderBottomColor: theme.border }]}>
-        <TouchableOpacity 
-          style={styles.backButton} 
-          onPress={() => setCurrentScreen('main')}
-        >
-          <Ionicons name="arrow-back" size={20} color={theme.text} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Template Packs</Text>
-        <View style={styles.headerSpacer} />
+  const formatFeedCount = (feeds: any[]) => {
+    const byType = feeds.reduce((acc, feed) => {
+      const type = feed.feed_sources?.type || 'unknown';
+      acc[type] = (acc[type] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const parts = [];
+    if (byType.rss) parts.push(`${byType.rss} RSS`);
+    if (byType.youtube) parts.push(`${byType.youtube} YouTube`);
+    if (byType.reddit) parts.push(`${byType.reddit} Reddit`);
+    
+    return parts.join(', ') || 'No feeds';
+  };
+
+  const MyFeedsScreen = () => (
+    <View style={styles.screen}>
+      <View style={styles.screenHeader}>
+        <Text style={[styles.title, { color: theme.text }]}>My Feeds</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+          {formatFeedCount(feeds)}
+        </Text>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={[styles.sectionDescription, { color: theme.textSecondary }]}>
-          Quick-start your feed with curated collections
-        </Text>
-        
-        {templatePacks.map((pack) => (
-          <View key={pack.id} style={[styles.packCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-            <View style={styles.packHeader}>
-              <Text style={[styles.packName, { color: theme.text }]}>{pack.name}</Text>
-              {pack.isPopular && (
-                <View style={[styles.popularBadge, { backgroundColor: theme.accent }]}>
-                  <Text style={[styles.popularText, { color: theme.accentText }]}>Popular</Text>
-                </View>
-              )}
-            </View>
-            
-            <Text style={[styles.packDescription, { color: theme.textSecondary }]}>
-              {pack.description}
+      {feeds.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="add-circle-outline" size={64} color={theme.textMuted} />
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>No feeds yet</Text>
+          <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
+            Add your first feed to get started
+          </Text>
+          <TouchableOpacity
+            style={[styles.addFirstButton, { backgroundColor: theme.accent }]}
+            onPress={() => setActiveTab('add-feed')}
+          >
+            <Text style={[styles.addFirstButtonText, { color: theme.accentText }]}>
+              Add Your First Feed
             </Text>
-            
-            <View style={styles.packStats}>
-              <Text style={[styles.packStat, { color: theme.textMuted }]}>
-                {pack.feeds.length} sources
-              </Text>
-              <Text style={[styles.packStat, { color: theme.textMuted }]}>
-                {pack.subscribers} subscribers
-              </Text>
-            </View>
-            
-            <View style={styles.packFeeds}>
-              {pack.feeds.slice(0, 3).map((feed, index) => (
-                <View key={index} style={[styles.feedTag, { backgroundColor: theme.pill }]}>
-                  <Text style={[styles.feedTagText, { color: theme.pillText }]}>{feed.name}</Text>
-                </View>
-              ))}
-              {pack.feeds.length > 3 && (
-                <View style={[styles.feedTag, { backgroundColor: theme.pill }]}>
-                  <Text style={[styles.feedTagText, { color: theme.textMuted }]}>
-                    +{pack.feeds.length - 3} more
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          data={feeds}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <View style={[styles.feedCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+              <View style={styles.feedCardHeader}>
+                <Image
+                  source={{ uri: getSourceIcon(item.feed_sources?.name || '', item.feed_sources?.type || '', item.feed_sources?.url) }}
+                  style={styles.feedIcon}
+                />
+                <View style={styles.feedInfo}>
+                  <Text style={[styles.feedName, { color: theme.text }]}>
+                    {item.feed_sources?.name || 'Unknown'}
                   </Text>
+                  <Text style={[styles.feedUrl, { color: theme.textSecondary }]} numberOfLines={1}>
+                    {item.feed_sources?.url || ''}
+                  </Text>
+                  <View style={styles.feedTypeContainer}>
+                                         <Ionicons 
+                       name={(FEED_TYPES.find(t => t.type === item.feed_sources?.type)?.icon || 'globe') as any} 
+                       size={12} 
+                       color={getSourceColor(item.feed_sources?.type || '')} 
+                     />
+                    <Text style={[styles.feedType, { color: getSourceColor(item.feed_sources?.type || '') }]}>
+                      {FEED_TYPES.find(t => t.type === item.feed_sources?.type)?.label || 'Unknown'}
+                    </Text>
+                  </View>
                 </View>
-              )}
+                <TouchableOpacity
+                  style={styles.removeButton}
+                  onPress={() => handleRemoveFeed(item.id)}
+                >
+                  <Ionicons name="trash-outline" size={20} color={theme.textMuted} />
+                </TouchableOpacity>
+              </View>
             </View>
-            
-            <TouchableOpacity
-              style={[styles.addPackButton, { backgroundColor: theme.accent }]}
-              onPress={() => handleAddPack(pack)}
-              disabled={bulkLoading}
-            >
-              <Text style={[styles.addPackButtonText, { color: theme.accentText }]}>
-                {bulkLoading ? 'Adding...' : 'Add Pack'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        ))}
-      </ScrollView>
+          )}
+          contentContainerStyle={styles.feedsList}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
     </View>
   );
 
-  // Add Feed Screen
-  const AddFeedScreen = () => {
-    return (
-      <View style={[styles.screenContainer, { backgroundColor: theme.background }]}>
-        <View style={[styles.header, { backgroundColor: theme.headerBg, borderBottomColor: theme.border }]}>
-          <TouchableOpacity 
-            style={styles.backButton} 
-            onPress={() => setCurrentScreen('main')}
-          >
-            <Ionicons name="arrow-back" size={20} color={theme.text} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Add Custom Feed</Text>
-          <View style={styles.headerSpacer} />
+  const AddFeedScreen = () => (
+    <View style={styles.screen}>
+      <View style={styles.screenHeader}>
+        <Text style={[styles.title, { color: theme.text }]}>Add New Feed</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+          Choose the type of feed you want to add
+        </Text>
+      </View>
+
+      <ScrollView style={styles.addFeedContainer} showsVerticalScrollIndicator={false}>
+        {/* Feed Type Selection */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Feed Type</Text>
+          <View style={styles.feedTypeGrid}>
+            {FEED_TYPES.map((feedType) => (
+              <TouchableOpacity
+                key={feedType.type}
+                style={[
+                  styles.feedTypeCard,
+                  { backgroundColor: theme.cardBg, borderColor: theme.border },
+                  selectedFeedType === feedType.type && { borderColor: theme.accent }
+                ]}
+                onPress={() => setSelectedFeedType(feedType.type)}
+              >
+                <Ionicons 
+                  name={feedType.icon as any} 
+                  size={24} 
+                  color={selectedFeedType === feedType.type ? theme.accent : theme.textSecondary} 
+                />
+                <Text style={[
+                  styles.feedTypeLabel, 
+                  { color: selectedFeedType === feedType.type ? theme.accent : theme.text }
+                ]}>
+                  {feedType.label}
+                </Text>
+                <Text style={[styles.feedTypeDescription, { color: theme.textSecondary }]}>
+                  {feedType.description}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
-        <View style={styles.content}>
-          <View style={[styles.inputContainer, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-            <Text style={[styles.inputLabel, { color: theme.text }]}>Feed Type</Text>
-            <View style={styles.feedTypeContainer}>
-              {FEED_TYPES.map((type) => (
-                <TouchableOpacity
-                  key={type.type}
-                  style={[
-                    styles.feedTypeButton,
-                    feedType === type.type 
-                      ? { backgroundColor: theme.accent, borderColor: theme.accent }
-                      : { backgroundColor: theme.pill, borderColor: theme.border }
-                  ]}
-                  onPress={() => setFeedType(type.type)}
-                >
-                  <Ionicons 
-                    name={type.icon as any} 
-                    size={16} 
-                    color={feedType === type.type ? theme.accentText : theme.pillText} 
-                  />
-                  <Text style={[
-                    styles.feedTypeText,
-                    feedType === type.type 
-                      ? { color: theme.accentText }
-                      : { color: theme.pillText }
-                  ]}>
-                    {type.label}
-                  </Text>
-                </TouchableOpacity>
+        {/* Feed Details Form */}
+        {selectedFeedType && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Feed Details</Text>
+            
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: theme.text }]}>Feed Name</Text>
+              <TextInput
+                style={[styles.textInput, { 
+                  backgroundColor: theme.cardBg, 
+                  borderColor: theme.border,
+                  color: theme.text 
+                }]}
+                value={newFeedName}
+                onChangeText={setNewFeedName}
+                placeholder="Enter a name for this feed"
+                placeholderTextColor={theme.textMuted}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: theme.text }]}>Feed URL</Text>
+              <TextInput
+                style={[styles.textInput, { 
+                  backgroundColor: theme.cardBg, 
+                  borderColor: theme.border,
+                  color: theme.text 
+                }]}
+                value={newFeedUrl}
+                onChangeText={setNewFeedUrl}
+                placeholder={FEED_TYPES.find(t => t.type === selectedFeedType)?.placeholder}
+                placeholderTextColor={theme.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+
+            {/* Examples */}
+            <View style={styles.examplesContainer}>
+              <Text style={[styles.examplesTitle, { color: theme.textSecondary }]}>Examples:</Text>
+              {FEED_TYPES.find(t => t.type === selectedFeedType)?.examples.map((example, index) => (
+                <Text key={index} style={[styles.example, { color: theme.textMuted }]}>
+                  • {example}
+                </Text>
               ))}
             </View>
-          </View>
 
-          <View style={[styles.inputContainer, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-            <Text style={[styles.inputLabel, { color: theme.text }]}>Feed URL</Text>
-            <TextInput
-              style={[styles.textInput, { 
-                backgroundColor: theme.cardBg, 
-                color: theme.text, 
-                borderColor: theme.border 
-              }]}
-              placeholder="Enter RSS feed URL..."
-              placeholderTextColor={theme.textMuted}
-              value={feedUrl}
-              onChangeText={setFeedUrl}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
-
-          {error ? (
-            <Text style={[styles.errorText, { color: '#ff4444' }]}>{error}</Text>
-          ) : null}
-
-          <TouchableOpacity
-            style={[
-              styles.addButton,
-              saving 
-                ? { backgroundColor: '#cccccc' }
-                : { backgroundColor: theme.accent }
-            ]}
-            onPress={handleAddFeed}
-            disabled={saving || !feedUrl.trim()}
-          >
-            {saving ? (
-              <ActivityIndicator size="small" color={theme.accentText} />
-            ) : (
-              <>
-                <Ionicons name="add" size={16} color={theme.accentText} />
-                <Text style={[styles.addButtonText, { color: theme.accentText }]}>
-                  Add Feed
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.divider}>
-            <View style={[styles.dividerLine, { backgroundColor: theme.divider }]} />
-            <Text style={[styles.dividerText, { color: theme.textMuted }]}>or</Text>
-            <View style={[styles.dividerLine, { backgroundColor: theme.divider }]} />
-          </View>
-
-          <TouchableOpacity 
-            style={[styles.templatePackCard, { backgroundColor: theme.cardBg, borderColor: theme.borderLight }]}
-            onPress={() => setCurrentScreen('template-packs')}
-          >
-            <Text style={styles.templatePackIcon}>📦</Text>
-            <Text style={[styles.templatePackTitle, { color: theme.text }]}>Browse Template Packs</Text>
-            <Text style={[styles.templatePackSubtitle, { color: theme.textSecondary }]}>
-              Quick-start with curated collections
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  };
-
-  // Main Feeds Screen
-  const MainFeedsScreen = () => (
-    <View style={[styles.screenContainer, { backgroundColor: theme.background }]}>
-      <View style={[styles.header, { backgroundColor: theme.headerBg, borderBottomColor: theme.border }]}>
-        <TouchableOpacity 
-          style={styles.backButton} 
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={20} color={theme.text} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Your Feeds</Text>
-        <TouchableOpacity 
-          style={styles.addButton} 
-          onPress={() => setCurrentScreen('add-feed')}
-        >
-          <Ionicons name="add" size={20} color={theme.text} />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <TouchableOpacity 
-          style={[styles.templatePackCard, { backgroundColor: theme.cardBg, borderColor: theme.borderLight }]}
-          onPress={() => setCurrentScreen('template-packs')}
-        >
-          <Text style={styles.templatePackIcon}>📦</Text>
-          <Text style={[styles.templatePackTitle, { color: theme.text }]}>Browse Template Packs</Text>
-          <Text style={[styles.templatePackSubtitle, { color: theme.textSecondary }]}>
-            Quick-start with curated collections
-          </Text>
-        </TouchableOpacity>
-
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>
-          Active Sources ({feeds.length})
-        </Text>
-
-        {feeds.map((feed) => (
-          <View key={feed.feed_sources.id} style={[styles.feedCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-            <View style={styles.feedCardContent}>
-              <Image
-                source={{ uri: getSourceIcon(feed.feed_sources.name || feed.feed_sources.url, feed.feed_sources.type, feed.feed_sources.url) }}
-                style={styles.sourceIcon}
-              />
-              <View style={styles.feedCardInfo}>
-                <Text style={[styles.feedCardName, { color: theme.text }]}>
-                  {feed.feed_sources.name || feed.feed_sources.url}
-                </Text>
-                <Text style={[styles.feedCardType, { color: theme.textSecondary }]}>
-                  {feed.feed_sources.type}
-                </Text>
-              </View>
-            </View>
-            <TouchableOpacity 
-              style={styles.removeButton}
-              onPress={() => handleRemoveFeed(feed.feed_sources.id)}
-              disabled={saving}
+            <TouchableOpacity
+              style={[
+                styles.addButton,
+                { backgroundColor: theme.accent },
+                (!newFeedName.trim() || !newFeedUrl.trim()) && { opacity: 0.5 }
+              ]}
+              onPress={handleAddFeed}
+              disabled={!newFeedName.trim() || !newFeedUrl.trim() || addingFeed}
             >
-              <Ionicons name="close" size={16} color={theme.textMuted} />
+              {addingFeed ? (
+                <ActivityIndicator color={theme.accentText} />
+              ) : (
+                <>
+                  <Ionicons name="add" size={20} color={theme.accentText} />
+                  <Text style={[styles.addButtonText, { color: theme.accentText }]}>
+                    Add Feed
+                  </Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
-        ))}
-
-        {feeds.length === 0 && (
-          <NoFeedsState onAddFeeds={() => setCurrentScreen('add-feed')} />
         )}
       </ScrollView>
     </View>
   );
 
   if (loading) {
-    return <LoadingState message="Loading your feeds..." />;
+    return <LoadingState message="Loading feeds..." />;
   }
 
-  if (loadError) {
+  if (error) {
     return (
       <ErrorState
         title="Failed to load feeds"
-        message={loadError}
+        message={error}
         onRetry={fetchFeeds}
       />
     );
   }
 
   return (
-    <View style={[styles.screenContainer, { backgroundColor: theme.background }]}>
-      {currentScreen === 'template-packs' && <TemplatePacksScreen />}
-      {currentScreen === 'add-feed' && <AddFeedScreen />}
-      {currentScreen === 'main' && <MainFeedsScreen />}
-      
-      {/* Bottom Navigation */}
-      <View style={[styles.bottomNav, { backgroundColor: theme.headerBg, borderTopColor: theme.border }]}>
-        <TouchableOpacity 
-          style={styles.navButton}
-          onPress={() => navigation.navigate('Home')}
-        >
-          <Ionicons name="home" size={20} color={theme.textSecondary} />
-          <Text style={[styles.navText, { color: theme.textSecondary }]}>Home</Text>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      {/* Header */}
+      <View style={[styles.header, { backgroundColor: theme.headerBg, borderBottomColor: theme.border }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.navButton, { backgroundColor: theme.accent }]}
-          onPress={() => navigation.navigate('FeedManagement')}
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Feed Management</Text>
+        <View style={styles.headerSpacer} />
+      </View>
+
+      {/* Tab Navigation */}
+      <View style={[styles.tabContainer, { backgroundColor: theme.headerBg, borderBottomColor: theme.border }]}>
+        <TouchableOpacity
+          style={[
+            styles.tab,
+            activeTab === 'my-feeds' && { borderBottomColor: theme.accent }
+          ]}
+          onPress={() => setActiveTab('my-feeds')}
         >
-          <Ionicons name="list" size={20} color={theme.accentText} />
-          <Text style={[styles.navText, { color: theme.accentText }]}>Feeds</Text>
+          <Text style={[
+            styles.tabText,
+            { color: activeTab === 'my-feeds' ? theme.accent : theme.textSecondary }
+          ]}>
+            My Feeds ({feeds.length})
+          </Text>
         </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navButton}
-          onPress={() => navigation.navigate('SavedArticles')}
+        <TouchableOpacity
+          style={[
+            styles.tab,
+            activeTab === 'add-feed' && { borderBottomColor: theme.accent }
+          ]}
+          onPress={() => setActiveTab('add-feed')}
         >
-          <Ionicons name="bookmark" size={20} color={theme.textSecondary} />
-          <Text style={[styles.navText, { color: theme.textSecondary }]}>Saved</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navButton}
-          onPress={() => navigation.navigate('Settings')}
-        >
-          <Ionicons name="settings" size={20} color={theme.textSecondary} />
-          <Text style={[styles.navText, { color: theme.textSecondary }]}>Settings</Text>
+          <Text style={[
+            styles.tabText,
+            { color: activeTab === 'add-feed' ? theme.accent : theme.textSecondary }
+          ]}>
+            Add Feed
+          </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Content */}
+      {activeTab === 'my-feeds' ? <MyFeedsScreen /> : <AddFeedScreen />}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  screenContainer: {
+  container: {
     flex: 1,
   },
   header: {
@@ -775,268 +505,188 @@ const styles = StyleSheet.create({
   headerSpacer: {
     width: 40,
   },
-  addButton: {
-    padding: 8,
-    borderRadius: 6,
+  tabContainer: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    paddingBottom: 10,
+    paddingTop: 10,
   },
-  content: {
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  screen: {
     flex: 1,
     paddingHorizontal: 16,
   },
-  sectionDescription: {
-    fontSize: 14,
-    marginBottom: 24,
-  },
-  packCard: {
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-  },
-  packHeader: {
+  screenHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
-  },
-  packName: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  popularBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-    marginLeft: 8,
-  },
-  popularText: {
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  packDescription: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  packStats: {
-    flexDirection: 'row',
-    marginBottom: 12,
-  },
-  packStat: {
-    fontSize: 12,
-    marginRight: 12,
-  },
-  packFeeds: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 12,
-  },
-  feedTag: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginRight: 6,
-    marginBottom: 4,
-  },
-  feedTagText: {
-    fontSize: 12,
-  },
-  addPackButton: {
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
+    paddingTop: 50,
+    borderBottomWidth: 1,
   },
-  addPackButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  sectionIcon: {
-    fontSize: 20,
-    marginRight: 8,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  feedItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  feedItemContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  sourceIcon: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    marginRight: 8,
-  },
-  feedItemInfo: {
-    flex: 1,
-  },
-  feedItemName: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  feedItemDescription: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  addFeedButton: {
-    padding: 8,
-    borderRadius: 6,
-    borderWidth: 1,
-  },
-  templatePackCard: {
-    padding: 16,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  templatePackIcon: {
+  title: {
     fontSize: 24,
-    marginBottom: 8,
+    fontWeight: '700',
   },
-  templatePackTitle: {
+  subtitle: {
     fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  templatePackSubtitle: {
-    fontSize: 12,
-  },
-  feedCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 12,
-    borderWidth: 1,
-  },
-  feedCardContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  feedCardInfo: {
-    marginLeft: 12,
-  },
-  feedCardName: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  feedCardType: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  removeButton: {
-    padding: 8,
-    borderRadius: 6,
+    marginTop: 4,
   },
   emptyState: {
     alignItems: 'center',
     paddingVertical: 40,
   },
-  emptyText: {
-    fontSize: 16,
+  emptyTitle: {
+    fontSize: 20,
+    marginTop: 16,
     marginBottom: 8,
   },
-  emptySubtext: {
+  emptySubtitle: {
     fontSize: 14,
     textAlign: 'center',
-  },
-  bottomNav: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    paddingBottom: 20, // Safe area
-    paddingTop: 12,
-  },
-  navButton: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginHorizontal: 4,
-  },
-  navText: {
-    fontSize: 12,
-    marginTop: 4,
-    fontWeight: '500',
-  },
-  // Add Feed Screen Styles
-  inputContainer: {
     marginBottom: 20,
-    padding: 16,
+  },
+  addFirstButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
     borderRadius: 8,
+    alignItems: 'center',
+  },
+  addFirstButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  feedsList: {
+    paddingBottom: 20,
+  },
+  feedCard: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
     borderWidth: 1,
+  },
+  feedCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  feedIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+  },
+  feedInfo: {
+    flex: 1,
+  },
+  feedName: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  feedUrl: {
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  feedTypeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  feedType: {
+    fontSize: 12,
+    marginLeft: 6,
+  },
+  removeButton: {
+    padding: 8,
+    borderRadius: 6,
+  },
+  addFeedContainer: {
+    paddingBottom: 20,
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  inputGroup: {
+    marginBottom: 16,
   },
   inputLabel: {
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 8,
   },
-  feedTypeContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  feedTypeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
-    borderWidth: 1,
-    gap: 6,
-  },
-  feedTypeText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
   textInput: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 6,
+    borderRadius: 8,
     borderWidth: 1,
     fontSize: 14,
   },
-  errorText: {
-    fontSize: 14,
-    marginBottom: 16,
-    textAlign: 'center',
+  examplesContainer: {
+    marginTop: 12,
+    marginBottom: 20,
   },
-  addButtonText: {
+  examplesTitle: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
+    marginBottom: 8,
   },
-  divider: {
+  example: {
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  addButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 20,
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
   },
-  dividerLine: {
-    flex: 1,
-    height: 1,
+  addButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
-  dividerText: {
-    paddingHorizontal: 16,
+  feedTypeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  feedTypeCard: {
+    width: '48%', // Two columns
+    aspectRatio: 1.2, // Slightly taller cards
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  feedTypeLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  feedTypeDescription: {
     fontSize: 12,
+    textAlign: 'center',
+    marginTop: 4,
   },
 });
 

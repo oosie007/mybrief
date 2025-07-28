@@ -1,0 +1,13 @@
+
+> mybrief-app@1.0.0 start
+> expo start
+
+env: load .env
+env: export EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY REDDIT_CLIENT_ID REDDIT_CLIENT_SECRET REDDIT_USER_AGENT YOUTUBE_API_KEY
+Starting project at /Users/johanoosthuizen/dev/mybrief/mybrief-app
+› Port 8081 is running this app in another window
+  /Users/johanoosthuizen/dev/mybrief/mybrief-app (pid 66196)
+Input is required, but 'npx expo' is in non-interactive mode.
+Required input:
+> Use port 8082 instead?
+› Skipping dev server

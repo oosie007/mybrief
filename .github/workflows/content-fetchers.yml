@@ -1,0 +1,133 @@
+name: Content Fetchers
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'  # Every 2 hours
+  workflow_dispatch:
+
+jobs:
+  fetch-content:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: |
+          npm install axios rss-parser
+
+      - name: Fetch RSS feeds
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node -e "
+          const axios = require('axios');
+          const RSSParser = require('rss-parser');
+          
+          const supabaseUrl = process.env.SUPABASE_URL;
+          const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+          
+          const supabase = axios.create({
+            baseURL: supabaseUrl + '/rest/v1',
+            headers: {
+              'apikey': supabaseKey,
+              'Authorization': 'Bearer ' + supabaseKey,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          const parser = new RSSParser();
+          
+          const feeds = [
+            { name: 'TechCrunch', url: 'https://techcrunch.com/feed/' },
+            { name: 'The Verge', url: 'https://www.theverge.com/rss/index.xml' },
+            { name: 'Wired', url: 'https://www.wired.com/feed/rss' },
+            { name: 'Ars Technica', url: 'https://feeds.arstechnica.com/arstechnica/index' }
+          ];
+          
+          async function fetchAndStore() {
+            console.log('Starting RSS fetch...');
+            
+            for (const feed of feeds) {
+              try {
+                console.log(`Processing ${feed.name}...`);
+                const content = await parser.parseURL(feed.url);
+                
+                for (const item of content.items.slice(0, 5)) {
+                  try {
+                    // Clean HTML content
+                    const cleanContent = (text) => {
+                      if (!text) return '';
+                      return text
+                        .replace(/&lt;/g, '<')
+                        .replace(/&gt;/g, '>')
+                        .replace(/&amp;/g, '&')
+                        .replace(/&quot;/g, '"')
+                        .replace(/&#39;/g, \"'\")
+                        .replace(/&apos;/g, \"'\")
+                        .replace(/&nbsp;/g, ' ')
+                        .replace(/&hellip;/g, '...')
+                        .replace(/<[^>]*>/g, '')
+                        .replace(/\s+/g, ' ')
+                        .trim();
+                    };
+                    
+                    await supabase.post('/content_items', {
+                      feed_source_id: feed.name,
+                      title: cleanContent(item.title || 'Untitled'),
+                      url: item.link || '',
+                      description: cleanContent(item.contentSnippet || item.summary || ''),
+                      image_url: item.enclosure?.url || null,
+                      published_at: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
+                      content_type: 'article',
+                      raw_content: item,
+                      author: item.creator || item.author || null
+                    });
+                    console.log(`Stored: ${item.title}`);
+                  } catch (error) {
+                    console.log(`Error storing item: ${error.message}`);
+                  }
+                }
+              } catch (error) {
+                console.log(`Error processing ${feed.name}: ${error.message}`);
+              }
+            }
+            
+            console.log('RSS fetch completed!');
+          }
+          
+          fetchAndStore().catch(console.error);
+          "
+
+      - name: Call Reddit Fetcher
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          curl -X POST "${{ secrets.SUPABASE_URL }}/functions/v1/redditFetcher" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json"
+
+      - name: Call YouTube Fetcher
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          curl -X POST "${{ secrets.SUPABASE_URL }}/functions/v1/youtubeFetcher" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json"
+
+      - name: Call RSS Fetcher
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          curl -X POST "${{ secrets.SUPABASE_URL }}/functions/v1/rssFetcher" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json" 

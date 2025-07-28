@@ -139,7 +139,10 @@ const DigestScreen = ({ navigation }: any) => {
         return;
       }
 
-      console.log('Loading digest for user:', userId);
+      console.log('=== DEBUG: User Authentication ===');
+      console.log('Current user ID:', userId);
+      console.log('User email:', user?.email);
+      console.log('================================');
 
       const today = new Date().toISOString().split('T')[0];
       const contentItems = await aggregateUserContent(userId, today);
@@ -614,6 +617,118 @@ const DigestScreen = ({ navigation }: any) => {
     );
   };
 
+  const YouTubeCard = ({ item }: { item: any }) => {
+    const isSaved = savedArticles.has(item.id);
+    const isRead = readArticles.has(item.id);
+    
+    return (
+      <TouchableOpacity 
+        style={[
+          styles.contentCard, 
+          { backgroundColor: theme.cardBg, borderColor: theme.border },
+          isRead && { opacity: 0.7 }
+        ]} 
+        onPress={() => handleOpenArticle(item)}
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.sourceInfo}>
+            <Image
+              source={{ uri: getSourceIcon(item.feed_sources?.name || '', 'youtube', item.url) }}
+              style={styles.sourceIcon}
+            />
+            <Text style={[styles.sourceText, { color: theme.textSecondary }]}>
+              {item.feed_sources?.name || 'Unknown'}
+            </Text>
+            {isRead && (
+              <View style={styles.readIndicator}>
+                <Ionicons name="checkmark-circle" size={12} color={theme.accent} />
+                <Text style={[styles.readText, { color: theme.accent }]}>Watched</Text>
+              </View>
+            )}
+          </View>
+          
+          <View style={styles.cardActions}>
+            <TouchableOpacity 
+              style={styles.actionButton} 
+              onPress={() => handleSaveArticle(item)}
+            >
+              <Ionicons 
+                name={isSaved ? 'bookmark' : 'bookmark-outline'} 
+                size={16} 
+                color={isSaved ? theme.accent : theme.textSecondary} 
+              />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.actionButton} 
+              onPress={() => handleShareArticle(item)}
+            >
+              <Ionicons name="share-outline" size={16} color={theme.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Video Thumbnail */}
+        {item.image_url && (
+          <View style={styles.videoThumbnailContainer}>
+            <Image
+              source={{ uri: item.image_url }}
+              style={styles.videoThumbnail}
+              resizeMode="cover"
+            />
+            <View style={styles.playButton}>
+              <Ionicons name="play" size={20} color="white" />
+            </View>
+          </View>
+        )}
+
+        <Text 
+          style={[
+            styles.cardTitle, 
+            { color: theme.text },
+            isRead && { fontWeight: '400' }
+          ]} 
+          numberOfLines={2}
+        >
+          {cleanTitle(item.title)}
+        </Text>
+        
+        <Text style={[styles.cardSummary, { color: theme.textSecondary }]} numberOfLines={2}>
+          {cleanContentForDisplay(item.summary)}
+        </Text>
+
+        <View style={styles.cardFooter}>
+          {/* Channel and Views on the left */}
+          <View style={styles.footerLeft}>
+            <Text style={[styles.authorText, { color: theme.textMuted }]}>
+              {item.author || 'Unknown Channel'}
+            </Text>
+            {item.score && (
+              <View style={styles.youtubeMetrics}>
+                <Ionicons name="eye-outline" size={12} color={theme.textMuted} />
+                <Text style={[styles.youtubeMetricText, { color: theme.textMuted }]}>
+                  {item.score.toLocaleString()} views
+                </Text>
+              </View>
+            )}
+          </View>
+          
+          {/* Published Date on the right */}
+          <View style={styles.footerRight}>
+            <Text style={[styles.publishedText, { color: theme.textMuted }]}>
+              {item.published_at ? new Date(item.published_at).toLocaleString('en-US', { 
+                month: 'short', 
+                day: 'numeric', 
+                hour: 'numeric', 
+                minute: '2-digit', 
+                hour12: true 
+              }) : 'Unknown Date'}
+            </Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   // Debug: Log current state
   console.log('=== RENDER DEBUG ===');
   console.log('Loading:', loading);
@@ -728,13 +843,18 @@ const DigestScreen = ({ navigation }: any) => {
       item.content_type === 'social'
     ).sort((a, b) => (b.score || 0) - (a.score || 0)); // Sort by upvotes descending
     
+    const videoPosts = allItems.filter(item => 
+      item.content_type === 'youtube'
+    ).sort((a, b) => (b.score || 0) - (a.score || 0)); // Sort by view count descending
+    
     return {
       newsArticles,
-      socialPosts
+      socialPosts,
+      videoPosts
     };
   };
 
-  const { newsArticles, socialPosts } = getContentByType();
+  const { newsArticles, socialPosts, videoPosts } = getContentByType();
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -903,8 +1023,28 @@ const DigestScreen = ({ navigation }: any) => {
               </>
             )}
 
+            {/* YouTube Videos Section */}
+            {videoPosts.length > 0 && (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, { color: theme.text }]}>Videos</Text>
+                  <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
+                    {videoPosts.length} video{videoPosts.length !== 1 ? 's' : ''} from channels
+                  </Text>
+                </View>
+
+                {videoPosts.map((item: any, index: number) => (
+                  <YouTubeCard key={item.id || index} item={item} />
+                ))}
+                
+                <View style={styles.sectionDivider}>
+                  <View style={[styles.dividerLine, { backgroundColor: theme.divider }]} />
+                </View>
+              </>
+            )}
+
             {/* Empty State */}
-            {newsArticles.length === 0 && socialPosts.length === 0 && (
+            {newsArticles.length === 0 && socialPosts.length === 0 && videoPosts.length === 0 && (
               <View style={styles.emptyState}>
                 <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
                   No content available for {activeCategory}
@@ -1248,6 +1388,39 @@ const styles = StyleSheet.create({
   },
   publishedText: {
     fontSize: 11,
+  },
+  // YouTube card styles
+  videoThumbnailContainer: {
+    position: 'relative',
+    marginBottom: 12,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  videoThumbnail: {
+    width: '100%',
+    height: 120,
+    borderRadius: 8,
+  },
+  playButton: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -20 }, { translateY: -20 }],
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  youtubeMetrics: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  youtubeMetricText: {
+    fontSize: 11,
+    marginLeft: 4,
   },
 });
 

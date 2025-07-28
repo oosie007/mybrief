@@ -58,7 +58,7 @@ export async function aggregateUserContent(
 
     const userFeedConfig = userData?.feed_config || feedConfig || {
       articles_per_feed: 10,
-      total_articles: 50,
+      total_articles: 100, // Increased from 50 to 100
       time_window_hours: 24,
       use_time_window: false,
     };
@@ -87,7 +87,11 @@ export async function aggregateUserContent(
     console.log('User feeds found:', userFeeds?.length || 0);
 
     if (!userFeeds || userFeeds.length === 0) {
-      console.log('No user feeds found');
+      console.log('=== DEBUG: No user feeds found ===');
+      console.log('User ID:', userId);
+      console.log('This means the user has no subscribed feeds');
+      console.log('The app will fall back to demo data');
+      console.log('==========================================');
       return [];
     }
 
@@ -104,11 +108,10 @@ export async function aggregateUserContent(
       console.log(`Using time window: last ${userFeedConfig.time_window_hours} hours`);
       console.log(`Time window: ${startDate.toISOString()} to ${endDate.toISOString()}`);
     } else {
-      // Use date range: last 7 days (default)
+      // Use time window: last 7 days to include more content
       startDate.setDate(startDate.getDate() - 7);
-      startDate.setHours(0, 0, 0, 0);
-      endDate.setHours(23, 59, 59, 999);
-      console.log('Using date range: last 7 days');
+      console.log('Using time window: last 7 days to include more content');
+      console.log(`Time window: ${startDate.toISOString()} to ${endDate.toISOString()}`);
     }
 
     console.log('Searching for content between:', startDate.toISOString(), 'and', endDate.toISOString());
@@ -182,34 +185,75 @@ export async function aggregateUserContent(
       domain: item.domain
     }));
 
-    // Apply article limits based on user configuration
+    // Apply balanced content limits by type
     let limitedItems = mappedItems;
 
     if (!userFeedConfig.use_time_window) {
-      // Group items by feed source
-      const itemsByFeed: { [feedId: string]: ContentItem[] } = {};
+      // Group items by content type first, then by feed source
+      const itemsByType: { [contentType: string]: ContentItem[] } = {};
       mappedItems.forEach(item => {
-        if (!itemsByFeed[item.feed_source_id]) {
-          itemsByFeed[item.feed_source_id] = [];
+        const type = item.content_type || 'rss';
+        if (!itemsByType[type]) {
+          itemsByType[type] = [];
         }
-        itemsByFeed[item.feed_source_id].push(item);
+        itemsByType[type].push(item);
       });
 
-      // Limit articles per feed
-      const limitedByFeed: ContentItem[] = [];
-      Object.values(itemsByFeed).forEach(feedItems => {
-        const limited = feedItems.slice(0, userFeedConfig.articles_per_feed);
-        limitedByFeed.push(...limited);
+      // Group each type by feed source and limit per feed
+      const limitedByType: { [contentType: string]: ContentItem[] } = {};
+      Object.entries(itemsByType).forEach(([type, items]) => {
+        const itemsByFeed: { [feedId: string]: ContentItem[] } = {};
+        items.forEach(item => {
+          if (!itemsByFeed[item.feed_source_id]) {
+            itemsByFeed[item.feed_source_id] = [];
+          }
+          itemsByFeed[item.feed_source_id].push(item);
+        });
+
+        // Limit to 10 articles per feed for each type
+        const limitedByFeed: ContentItem[] = [];
+        Object.values(itemsByFeed).forEach(feedItems => {
+          const limited = feedItems.slice(0, 10); // Max 10 per feed
+          limitedByFeed.push(...limited);
+        });
+
+        // Sort by published date (newest first) and limit to 10 per type
+        limitedByFeed.sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime());
+        limitedByType[type] = limitedByFeed.slice(0, 10); // Max 10 per type
+      });
+
+      // Combine all types and limit total
+      const allLimited: ContentItem[] = [];
+      Object.values(limitedByType).forEach(items => {
+        allLimited.push(...items);
       });
 
       // Sort by published date (newest first) and limit total
-      limitedByFeed.sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime());
-      limitedItems = limitedByFeed.slice(0, userFeedConfig.total_articles);
+      allLimited.sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime());
+      limitedItems = allLimited.slice(0, userFeedConfig.total_articles);
 
-      console.log(`Limited to ${userFeedConfig.articles_per_feed} articles per feed, ${userFeedConfig.total_articles} total`);
+      console.log(`Limited to 10 articles per feed, 10 per type, ${userFeedConfig.total_articles} total`);
+      
+      // Log breakdown by type
+      Object.entries(limitedByType).forEach(([type, items]) => {
+        console.log(`${type}: ${items.length} items`);
+      });
     }
 
     console.log('Final content items:', limitedItems.length);
+    
+    // Debug: Show content by type
+    const byType: { [key: string]: number } = {};
+    limitedItems.forEach(item => {
+      const type = item.content_type || 'unknown';
+      byType[type] = (byType[type] || 0) + 1;
+    });
+    
+    console.log('Content by type:');
+    Object.entries(byType).forEach(([type, count]) => {
+      console.log(`- ${type}: ${count} items`);
+    });
+    
     return limitedItems;
   } catch (error) {
     console.error('Error aggregating user content:', error);
