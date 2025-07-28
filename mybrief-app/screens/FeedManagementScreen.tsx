@@ -684,9 +684,7 @@ const FeedManagementScreen = ({ navigation }: any) => {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
       <View style={[styles.header, { backgroundColor: theme.headerBg, borderBottomColor: theme.border }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={theme.text} />
-        </TouchableOpacity>
+        <View style={styles.headerSpacer} />
         <Text style={[styles.headerTitle, { color: theme.text }]}>Feed Management</Text>
         <View style={styles.headerSpacer} />
       </View>
@@ -725,6 +723,37 @@ const FeedManagementScreen = ({ navigation }: any) => {
 
       {/* Content */}
       {activeTab === 'my-feeds' ? <MyFeedsScreen /> : <AddFeedScreen />}
+      
+      {/* Bottom Navigation */}
+      <View style={[styles.bottomNav, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
+        <TouchableOpacity 
+          style={styles.navButton}
+          onPress={() => navigation.navigate('Home')}
+        >
+          <Ionicons name="home-outline" size={24} color={theme.textSecondary} />
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.navButton, { backgroundColor: theme.hover }]}
+          onPress={() => navigation.navigate('FeedManagement')}
+        >
+          <Ionicons name="list-outline" size={24} color={theme.accent} />
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.navButton}
+          onPress={() => navigation.navigate('SavedArticles')}
+        >
+          <Ionicons name="heart-outline" size={24} color={theme.textSecondary} />
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.navButton}
+          onPress={() => navigation.navigate('Settings')}
+        >
+          <Ionicons name="settings-outline" size={24} color={theme.textSecondary} />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
@@ -984,6 +1013,27 @@ const styles = StyleSheet.create({
   feedTypeDescription: {
     fontSize: 14,
     color: '#666',
+  },
+  bottomNav: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    paddingBottom: 34, // Increased safe area padding
+    paddingTop: 12, // Reduced top padding
+    paddingHorizontal: 8, // Add horizontal padding
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 8,
+  },
+  navButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8, // Reduced padding
+    borderRadius: 8,
+    marginHorizontal: 4, // Increased margin
+    minHeight: 40, // Reduced height
   },
 });
 

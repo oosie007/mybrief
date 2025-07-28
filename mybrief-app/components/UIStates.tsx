@@ -131,7 +131,7 @@ export const NoDigestState: React.FC<{ onRefresh?: () => void }> = ({ onRefresh 
 
 export const NoSavedArticlesState: React.FC<{ onAddFeeds?: () => void }> = ({ onAddFeeds }) => (
   <EmptyState
-    icon="bookmark-outline"
+    icon="heart-outline"
     title="No saved articles yet"
     subtitle="Save articles while browsing to read them later."
     actionText="Add Feeds"

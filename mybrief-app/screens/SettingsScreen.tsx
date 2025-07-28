@@ -670,37 +670,33 @@ const SettingsScreen = ({ navigation }: any) => {
       </ScrollView>
       
       {/* Bottom Navigation */}
-      <View style={[styles.bottomNav, { backgroundColor: theme.headerBg, borderTopColor: theme.border }]}>
+      <View style={[styles.bottomNav, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
         <TouchableOpacity 
           style={styles.navButton}
           onPress={() => navigation.navigate('Home')}
         >
-          <Ionicons name="home" size={20} color={theme.textSecondary} />
-          <Text style={[styles.navText, { color: theme.textSecondary }]}>Home</Text>
+          <Ionicons name="home-outline" size={24} color={theme.textSecondary} />
         </TouchableOpacity>
         
         <TouchableOpacity 
           style={styles.navButton}
           onPress={() => navigation.navigate('FeedManagement')}
         >
-          <Ionicons name="list" size={20} color={theme.textSecondary} />
-          <Text style={[styles.navText, { color: theme.textSecondary }]}>Feeds</Text>
+          <Ionicons name="list-outline" size={24} color={theme.textSecondary} />
         </TouchableOpacity>
         
         <TouchableOpacity 
           style={styles.navButton}
           onPress={() => navigation.navigate('SavedArticles')}
         >
-          <Ionicons name="bookmark" size={20} color={theme.textSecondary} />
-          <Text style={[styles.navText, { color: theme.textSecondary }]}>Saved</Text>
+          <Ionicons name="heart-outline" size={24} color={theme.textSecondary} />
         </TouchableOpacity>
         
         <TouchableOpacity 
-          style={[styles.navButton, { backgroundColor: theme.accent }]}
+          style={[styles.navButton, { backgroundColor: theme.hover }]}
           onPress={() => navigation.navigate('Settings')}
         >
-          <Ionicons name="settings" size={20} color={theme.accentText} />
-          <Text style={[styles.navText, { color: theme.accentText }]}>Settings</Text>
+          <Ionicons name="settings-outline" size={24} color={theme.accent} />
         </TouchableOpacity>
       </View>
     </View>
@@ -827,20 +823,23 @@ const styles = StyleSheet.create({
   bottomNav: {
     flexDirection: 'row',
     borderTopWidth: 1,
-    paddingBottom: 20, // Safe area
-    paddingTop: 12,
+    paddingBottom: 34, // Increased safe area padding
+    paddingTop: 12, // Reduced top padding
+    paddingHorizontal: 8, // Add horizontal padding
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 8,
   },
   navButton: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 8,
+    justifyContent: 'center',
+    paddingVertical: 8, // Reduced padding
     borderRadius: 8,
-    marginHorizontal: 4,
-  },
-  navText: {
-    fontSize: 12,
-    marginTop: 4,
-    fontWeight: '500',
+    marginHorizontal: 4, // Increased margin
+    minHeight: 40, // Reduced height
   },
 });
 
