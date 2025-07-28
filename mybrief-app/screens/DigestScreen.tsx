@@ -440,7 +440,12 @@ const DigestScreen = ({ navigation }: any) => {
   };
 
   const getSourceIcon = (source: string, type: string, sourceUrl?: string) => {
-    // Get the actual favicon URL for this source
+    // For YouTube videos, use a consistent generic YouTube icon
+    if (type === 'youtube') {
+      return 'https://www.google.com/s2/favicons?domain=youtube.com&sz=32';
+    }
+    
+    // For other content types, get the actual favicon URL for this source
     return getFeedSourceFavicon(source, sourceUrl);
   };
 
@@ -697,11 +702,8 @@ const DigestScreen = ({ navigation }: any) => {
         </Text>
 
         <View style={styles.cardFooter}>
-          {/* Channel and Views on the left */}
+          {/* Views on the left */}
           <View style={styles.footerLeft}>
-            <Text style={[styles.authorText, { color: theme.textMuted }]}>
-              {item.author || 'Unknown Channel'}
-            </Text>
             {item.score && (
               <View style={styles.youtubeMetrics}>
                 <Ionicons name="eye-outline" size={12} color={theme.textMuted} />

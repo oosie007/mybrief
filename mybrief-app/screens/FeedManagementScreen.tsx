@@ -22,25 +22,28 @@ const FEED_TYPES = [
     type: 'rss', 
     label: 'RSS Feed', 
     icon: 'globe',
+    iconColor: '#ff6600',
     description: 'News websites, blogs, podcasts',
     placeholder: 'https://example.com/feed.xml',
-    examples: ['TechCrunch', 'The Verge', 'Wired']
+    examples: ['https://techcrunch.com/feed/', 'https://www.theverge.com/rss/index.xml', 'https://www.wired.com/feed/rss']
   },
   { 
     type: 'youtube', 
     label: 'YouTube Channel', 
     icon: 'logo-youtube',
+    iconColor: '#ff0000',
     description: 'YouTube channels and creators',
     placeholder: 'https://www.youtube.com/@channelname',
-    examples: ['@TechCrunch', '@TheVerge', '@WIRED']
+    examples: ['https://www.youtube.com/@TechCrunch', 'https://www.youtube.com/@TheVerge', 'https://www.youtube.com/@WIRED']
   },
   { 
     type: 'reddit', 
     label: 'Reddit Community', 
     icon: 'logo-reddit',
+    iconColor: '#ff4500',
     description: 'Reddit subreddits and communities',
     placeholder: 'https://reddit.com/r/subreddit',
-    examples: ['r/technology', 'r/programming', 'r/startups']
+    examples: ['https://reddit.com/r/technology', 'https://reddit.com/r/programming', 'https://reddit.com/r/startups']
   },
 ];
 
@@ -54,6 +57,108 @@ const FeedManagementScreen = ({ navigation }: any) => {
   const [newFeedName, setNewFeedName] = useState('');
   const [newFeedUrl, setNewFeedUrl] = useState('');
   const [addingFeed, setAddingFeed] = useState(false);
+
+  // Function to extract feed name from URL
+  const extractFeedNameFromUrl = (url: string, type: string): string => {
+    if (!url.trim()) return '';
+    
+    try {
+      const urlObj = new URL(url);
+      
+      switch (type) {
+        case 'youtube':
+          // Extract channel name from YouTube URL
+          const youtubeMatch = url.match(/youtube\.com\/@([^\/\?]+)/);
+          if (youtubeMatch) {
+            const channelId = youtubeMatch[1];
+            // Convert camelCase to proper name (e.g., "aliabdaal" -> "Ali Abdaal")
+            return channelId
+              .replace(/([A-Z])/g, ' $1') // Add space before capitals
+              .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
+              .replace(/\s+/g, ' ') // Clean up multiple spaces
+              .trim();
+          }
+          break;
+        case 'reddit':
+          // Extract subreddit name from Reddit URL
+          const redditMatch = url.match(/reddit\.com\/r\/([^\/\?]+)/);
+          if (redditMatch) {
+            return `r/${redditMatch[1]}`;
+          }
+          break;
+        case 'rss':
+          // Extract domain name for RSS feeds
+          return urlObj.hostname.replace('www.', '').split('.')[0];
+      }
+    } catch (error) {
+      console.error('Error parsing URL:', error);
+    }
+    
+    return '';
+  };
+
+  // Function to fetch real channel name from YouTube
+  const fetchYouTubeChannelName = async (url: string): Promise<string> => {
+    try {
+      const youtubeMatch = url.match(/youtube\.com\/@([^\/\?]+)/);
+      if (!youtubeMatch) return '';
+      
+      const channelId = youtubeMatch[1];
+      
+      // Try to fetch from our database first (if we have it)
+      const { data: existingFeed } = await supabase
+        .from('feed_sources')
+        .select('name')
+        .eq('url', url)
+        .single();
+      
+      if (existingFeed?.name) {
+        return existingFeed.name;
+      }
+      
+      // Fallback to URL parsing with better formatting
+      // Convert "aliabdaal" to "Ali Abdaal"
+      const formatChannelName = (id: string): string => {
+        // Handle common patterns
+        if (id === 'aliabdaal') return 'Ali Abdaal';
+        if (id === 'techcrunch') return 'TechCrunch';
+        if (id === 'theverge') return 'The Verge';
+        if (id === 'wired') return 'WIRED';
+        
+        // Generic conversion for other cases
+        return id
+          .replace(/([A-Z])/g, ' $1') // Add space before capitals
+          .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
+          .replace(/\s+/g, ' ') // Clean up multiple spaces
+          .trim();
+      };
+      
+      return formatChannelName(channelId);
+    } catch (error) {
+      console.error('Error fetching YouTube channel name:', error);
+      return '';
+    }
+  };
+
+  // Update feed name when URL changes
+  useEffect(() => {
+    if (selectedFeedType && newFeedUrl) {
+      if (selectedFeedType === 'youtube') {
+        // For YouTube, try to fetch the real channel name
+        fetchYouTubeChannelName(newFeedUrl).then(name => {
+          if (name) {
+            setNewFeedName(name);
+          }
+        });
+      } else {
+        // For other types, use URL parsing
+        const extractedName = extractFeedNameFromUrl(newFeedUrl, selectedFeedType);
+        if (extractedName) {
+          setNewFeedName(extractedName);
+        }
+      }
+    }
+  }, [newFeedUrl, selectedFeedType]);
 
   useEffect(() => {
     fetchFeeds();
@@ -102,7 +207,7 @@ const FeedManagementScreen = ({ navigation }: any) => {
   };
 
   const handleAddFeed = async () => {
-    if (!newFeedName.trim() || !newFeedUrl.trim() || !selectedFeedType) {
+    if (!newFeedUrl.trim() || !selectedFeedType) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
@@ -116,11 +221,30 @@ const FeedManagementScreen = ({ navigation }: any) => {
         return;
       }
 
+      // Get the proper feed name based on type
+      let feedName = newFeedName.trim();
+      if (selectedFeedType === 'youtube') {
+        // For YouTube, get the real channel name
+        feedName = await fetchYouTubeChannelName(newFeedUrl);
+        if (!feedName) {
+          // Fallback to URL parsing
+          feedName = extractFeedNameFromUrl(newFeedUrl, selectedFeedType);
+        }
+      } else {
+        // For other types, use URL parsing
+        feedName = extractFeedNameFromUrl(newFeedUrl, selectedFeedType);
+      }
+
+      if (!feedName) {
+        Alert.alert('Error', 'Could not extract feed name from URL');
+        return;
+      }
+
       // First, create or get the feed source
       const { data: feedSource, error: feedSourceError } = await supabase
         .from('feed_sources')
         .upsert({
-          name: newFeedName.trim(),
+          name: feedName,
           url: newFeedUrl.trim(),
           type: selectedFeedType,
           is_active: true,
@@ -134,14 +258,14 @@ const FeedManagementScreen = ({ navigation }: any) => {
         return;
       }
 
-      // Then, link it to the user
+      // Then, link it to the user (use upsert to handle duplicates)
       const { error: userFeedError } = await supabase
         .from('user_feeds')
-        .insert({
+        .upsert({
           user_id: user.id,
           feed_source_id: feedSource.id,
           is_active: true,
-        });
+        }, { onConflict: 'user_id,feed_source_id' });
 
       if (userFeedError) {
         console.error('Error linking feed to user:', userFeedError);
@@ -154,6 +278,9 @@ const FeedManagementScreen = ({ navigation }: any) => {
       setNewFeedUrl('');
       setSelectedFeedType(null);
       setActiveTab('my-feeds');
+      
+      // Show success message
+      Alert.alert('Success', 'Feed added successfully!');
 
       // Refresh feeds
       await fetchFeeds();
@@ -315,31 +442,43 @@ const FeedManagementScreen = ({ navigation }: any) => {
         {/* Feed Type Selection */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Feed Type</Text>
-          <View style={styles.feedTypeGrid}>
+          <View style={styles.feedTypeList}>
             {FEED_TYPES.map((feedType) => (
               <TouchableOpacity
                 key={feedType.type}
                 style={[
-                  styles.feedTypeCard,
+                  styles.feedTypeItem,
                   { backgroundColor: theme.cardBg, borderColor: theme.border },
                   selectedFeedType === feedType.type && { borderColor: theme.accent }
                 ]}
                 onPress={() => setSelectedFeedType(feedType.type)}
               >
-                <Ionicons 
-                  name={feedType.icon as any} 
-                  size={24} 
-                  color={selectedFeedType === feedType.type ? theme.accent : theme.textSecondary} 
-                />
-                <Text style={[
-                  styles.feedTypeLabel, 
-                  { color: selectedFeedType === feedType.type ? theme.accent : theme.text }
-                ]}>
-                  {feedType.label}
-                </Text>
-                <Text style={[styles.feedTypeDescription, { color: theme.textSecondary }]}>
-                  {feedType.description}
-                </Text>
+                <View style={styles.feedTypeContent}>
+                  <View style={[
+                    styles.feedTypeIcon,
+                    { backgroundColor: feedType.iconColor }
+                  ]}>
+                    <Ionicons 
+                      name={feedType.icon as any} 
+                      size={20} 
+                      color="white" 
+                    />
+                  </View>
+                  <View style={styles.feedTypeText}>
+                    <Text style={[
+                      styles.feedTypeLabel, 
+                      { color: selectedFeedType === feedType.type ? theme.accent : theme.text }
+                    ]}>
+                      {feedType.label}
+                    </Text>
+                    <Text style={[styles.feedTypeDescription, { color: theme.textSecondary }]}>
+                      {feedType.description}
+                    </Text>
+                  </View>
+                </View>
+                {selectedFeedType === feedType.type && (
+                  <Ionicons name="checkmark-circle" size={24} color={theme.accent} />
+                )}
               </TouchableOpacity>
             ))}
           </View>
@@ -350,21 +489,6 @@ const FeedManagementScreen = ({ navigation }: any) => {
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Feed Details</Text>
             
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: theme.text }]}>Feed Name</Text>
-              <TextInput
-                style={[styles.textInput, { 
-                  backgroundColor: theme.cardBg, 
-                  borderColor: theme.border,
-                  color: theme.text 
-                }]}
-                value={newFeedName}
-                onChangeText={setNewFeedName}
-                placeholder="Enter a name for this feed"
-                placeholderTextColor={theme.textMuted}
-              />
-            </View>
-
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: theme.text }]}>Feed URL</Text>
               <TextInput
@@ -532,7 +656,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    paddingTop: 50,
     borderBottomWidth: 1,
   },
   title: {
@@ -667,6 +790,9 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-between',
   },
+  feedTypeList: {
+    gap: 12,
+  },
   feedTypeCard: {
     width: '48%', // Two columns
     aspectRatio: 1.2, // Slightly taller cards
@@ -677,16 +803,39 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
   },
+  feedTypeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  feedTypeContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  feedTypeIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  feedTypeText: {
+    flex: 1,
+  },
   feedTypeLabel: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
-    marginTop: 12,
-    textAlign: 'center',
+    marginBottom: 4,
   },
   feedTypeDescription: {
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 4,
+    fontSize: 14,
+    color: '#666',
   },
 });
 
