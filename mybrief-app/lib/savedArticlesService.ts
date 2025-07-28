@@ -221,7 +221,7 @@ export const savedArticlesService = {
             content_type,
             feed_sources (
               name,
-              type
+            type
             ),
             author,
             score,
@@ -241,7 +241,20 @@ export const savedArticlesService = {
       }
 
       console.log('Fetched saved articles:', savedArticles?.length || 0);
-      return savedArticles || [];
+      
+      // Debug: Log the first article structure
+      if (savedArticles && savedArticles.length > 0) {
+        console.log('First saved article structure:', JSON.stringify(savedArticles[0], null, 2));
+      }
+      
+      // Map the data to match the interface structure
+      const mappedArticles = (savedArticles || []).map(article => ({
+        ...article,
+        content_data: article.content_items // Map content_items to content_data
+      }));
+      
+      console.log('Mapped articles:', mappedArticles.length);
+      return mappedArticles;
     } catch (error) {
       console.error('Error in getSavedArticles:', error);
       return [];
