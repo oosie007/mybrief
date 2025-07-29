@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Animated,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,20 +16,45 @@ interface ArticleViewerProps {
   url: string;
   title: string;
   onClose: () => void;
+  onSave?: (article: { url: string; title: string }) => void;
+  onShare?: (article: { url: string; title: string }) => void;
+  isSaved?: boolean;
 }
 
-const ArticleViewer: React.FC<ArticleViewerProps> = ({ url, title, onClose }) => {
+const ArticleViewer: React.FC<ArticleViewerProps> = ({ 
+  url, 
+  title, 
+  onClose, 
+  onSave, 
+  onShare, 
+  isSaved = false 
+}) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
   const { theme } = useTheme();
+
+  const handleSave = () => {
+    if (onSave) {
+      onSave({ url, title });
+    }
+  };
+
+  const handleShare = () => {
+    if (onShare) {
+      onShare({ url, title });
+    }
+  };
 
   const handleLoadStart = () => {
     setLoading(true);
     setError(null);
+    setProgress(0);
   };
 
   const handleLoadEnd = () => {
     setLoading(false);
+    setProgress(100);
   };
 
   const handleError = (syntheticEvent: any) => {
@@ -52,14 +78,38 @@ const ArticleViewer: React.FC<ArticleViewerProps> = ({ url, title, onClose }) =>
         <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>
           {title}
         </Text>
-        <View style={styles.headerSpacer} />
+        <View style={styles.headerActions}>
+          {onSave && (
+            <TouchableOpacity style={styles.actionButton} onPress={handleSave}>
+              <Ionicons 
+                name={isSaved ? "heart" : "heart-outline"} 
+                size={24} 
+                color={isSaved ? theme.accent : theme.text} 
+              />
+            </TouchableOpacity>
+          )}
+          {onShare && (
+            <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
+              <Ionicons name="share-outline" size={24} color={theme.text} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
-      {/* Loading Indicator */}
+      {/* Progress Bar */}
       {loading && (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.accent} />
-          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading article...</Text>
+        <View style={styles.progressContainer}>
+          <View style={[styles.progressBar, { backgroundColor: theme.border }]}>
+            <View 
+              style={[
+                styles.progressFill, 
+                { 
+                  backgroundColor: theme.accent,
+                  width: `${progress}%`
+                }
+              ]} 
+            />
+          </View>
         </View>
       )}
 
@@ -90,11 +140,9 @@ const ArticleViewer: React.FC<ArticleViewerProps> = ({ url, title, onClose }) =>
         onError={handleError}
         onNavigationStateChange={handleNavigationStateChange}
         startInLoadingState={true}
-        renderLoading={() => (
-          <View style={styles.webviewLoading}>
-            <ActivityIndicator size="large" color={theme.accent} />
-          </View>
-        )}
+        onLoadProgress={({ nativeEvent }) => {
+          setProgress(nativeEvent.progress * 100);
+        }}
         javaScriptEnabled={true}
         domStorageEnabled={true}
         onShouldStartLoadWithRequest={(request) => {
@@ -141,8 +189,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  headerSpacer: {
-    width: 40,
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  actionButton: {
+    padding: 8,
+    borderRadius: 8,
   },
   floatingCloseButton: {
     position: 'absolute',
@@ -209,6 +263,23 @@ const styles = StyleSheet.create({
   retryButtonText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  progressContainer: {
+    position: 'absolute',
+    top: 100, // Position below header
+    left: 0,
+    right: 0,
+    height: 3,
+    zIndex: 1000,
+    backgroundColor: 'transparent',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: 'transparent',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 0,
   },
 });
 

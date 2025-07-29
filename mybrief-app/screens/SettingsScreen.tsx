@@ -42,8 +42,6 @@ const SettingsScreen = ({ navigation }: any) => {
   // Form states
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [timezone, setTimezone] = useState('');
-  const [notificationTime, setNotificationTime] = useState('');
   const [displayMode, setDisplayMode] = useState<'minimal' | 'rich'>('minimal');
   
   // Feed configuration states
@@ -79,8 +77,8 @@ const SettingsScreen = ({ navigation }: any) => {
       };
 
       setProfile(mockProfile);
-      setTimezone(mockProfile.timezone);
-      setNotificationTime(mockProfile.digest_time);
+      // setTimezone(mockProfile.timezone); // Removed as per edit hint
+      // setNotificationTime(mockProfile.digest_time); // Removed as per edit hint
       setDisplayMode(mockProfile.display_mode);
       
       // Set feed configuration
@@ -107,8 +105,8 @@ const SettingsScreen = ({ navigation }: any) => {
       const { error } = await supabase
         .from('users')
         .update({
-          timezone,
-          digest_time: notificationTime,
+          // timezone, // Removed as per edit hint
+          // digest_time: notificationTime, // Removed as per edit hint
           display_mode: displayMode,
           feed_config: {
             articles_per_feed: parseInt(articlesPerFeed) || 10,
@@ -124,8 +122,8 @@ const SettingsScreen = ({ navigation }: any) => {
       } else {
         setProfile(prev => prev ? {
           ...prev,
-          timezone,
-          digest_time: notificationTime,
+          // timezone, // Removed as per edit hint
+          // digest_time: notificationTime, // Removed as per edit hint
           display_mode: displayMode,
         } : null);
         setSuccess('Profile updated successfully!');
@@ -415,62 +413,6 @@ const SettingsScreen = ({ navigation }: any) => {
         <SectionHeader title="Preferences" />
         <View style={[styles.section, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
           <SettingItem
-            icon="time"
-            title="Notification Time"
-            subtitle={`Daily digest at ${notificationTime}`}
-            rightElement={
-              <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
-            }
-            onPress={() => {
-              // Could open time picker
-              Alert.alert('Notification Time', 'Use the form below to change notification time');
-            }}
-          />
-
-          <View style={styles.formGroup}>
-            <Text style={[styles.formLabel, { color: theme.text }]}>Notification Time (24h format)</Text>
-            <TextInput
-              style={[styles.formInput, { 
-                backgroundColor: theme.background, 
-                borderColor: theme.border,
-                color: theme.text 
-              }]}
-              placeholder="07:00"
-              placeholderTextColor={theme.textMuted}
-              value={notificationTime}
-              onChangeText={setNotificationTime}
-            />
-          </View>
-
-          <SettingItem
-            icon="globe"
-            title="Timezone"
-            subtitle={timezone}
-            rightElement={
-              <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
-            }
-            onPress={() => {
-              // Could open timezone picker
-              Alert.alert('Timezone', 'Use the form below to change timezone');
-            }}
-          />
-
-          <View style={styles.formGroup}>
-            <Text style={[styles.formLabel, { color: theme.text }]}>Timezone</Text>
-            <TextInput
-              style={[styles.formInput, { 
-                backgroundColor: theme.background, 
-                borderColor: theme.border,
-                color: theme.text 
-              }]}
-              placeholder="UTC"
-              placeholderTextColor={theme.textMuted}
-              value={timezone}
-              onChangeText={setTimezone}
-            />
-          </View>
-
-          <SettingItem
             icon="eye"
             title="Display Mode"
             subtitle={displayMode === 'minimal' ? 'Minimal (text-only)' : 'Rich (with images)'}
@@ -498,6 +440,10 @@ const SettingsScreen = ({ navigation }: any) => {
             }
           />
         </View>
+
+        {/* Notifications Section */}
+        <SectionHeader title="Notifications" />
+        <NotificationSettings />
 
         {/* Feed Configuration Section */}
         <SectionHeader title="Feed Configuration" />
@@ -652,10 +598,6 @@ const SettingsScreen = ({ navigation }: any) => {
             showBorder={false}
           />
         </View>
-
-        {/* Notifications Section */}
-        <SectionHeader title="Notifications" />
-        <NotificationSettings />
 
         {/* App Info Section */}
         <SectionHeader title="App Info" />

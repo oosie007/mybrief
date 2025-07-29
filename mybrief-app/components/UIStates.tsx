@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../lib/theme';
 
@@ -23,6 +23,80 @@ interface EmptyStateProps {
   onAction?: () => void;
   showAction?: boolean;
 }
+
+interface SkeletonCardProps {
+  theme: any;
+}
+
+// Skeleton Card Component
+const SkeletonCard: React.FC<SkeletonCardProps> = ({ theme }) => {
+  const animatedValue = React.useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(animatedValue, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(animatedValue, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, []);
+
+  const opacity = animatedValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 0.7],
+  });
+
+  return (
+    <View style={[styles.skeletonCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+      {/* Header with favicon and source */}
+      <View style={styles.skeletonHeader}>
+        <Animated.View style={[styles.skeletonFavicon, { backgroundColor: theme.border, opacity }]} />
+        <View style={styles.skeletonHeaderText}>
+          <Animated.View style={[styles.skeletonSource, { backgroundColor: theme.border, opacity }]} />
+          <Animated.View style={[styles.skeletonTime, { backgroundColor: theme.border, opacity }]} />
+        </View>
+        <Animated.View style={[styles.skeletonHeart, { backgroundColor: theme.border, opacity }]} />
+      </View>
+
+      {/* Title */}
+      <Animated.View style={[styles.skeletonTitle, { backgroundColor: theme.border, opacity }]} />
+      <Animated.View style={[styles.skeletonTitle2, { backgroundColor: theme.border, opacity }]} />
+
+      {/* Summary */}
+      <Animated.View style={[styles.skeletonSummary, { backgroundColor: theme.border, opacity }]} />
+      <Animated.View style={[styles.skeletonSummary2, { backgroundColor: theme.border, opacity }]} />
+
+      {/* Footer */}
+      <View style={styles.skeletonFooter}>
+        <Animated.View style={[styles.skeletonMetric, { backgroundColor: theme.border, opacity }]} />
+        <Animated.View style={[styles.skeletonDate, { backgroundColor: theme.border, opacity }]} />
+      </View>
+    </View>
+  );
+};
+
+// Skeleton Loading State Component
+export const SkeletonLoadingState: React.FC<{ count?: number }> = ({ count = 6 }) => {
+  const { theme } = useTheme();
+  
+  return (
+    <View style={[styles.skeletonContainer, { backgroundColor: theme.background }]}>
+      {Array.from({ length: count }).map((_, index) => (
+        <SkeletonCard key={index} theme={theme} />
+      ))}
+    </View>
+  );
+};
 
 export const LoadingState: React.FC<LoadingStateProps> = ({ 
   message = 'Loading...', 
@@ -159,6 +233,48 @@ export const SearchEmptyState: React.FC<{ query: string }> = ({ query }) => (
   />
 );
 
+// Skeleton Feed Card Component for Feed Management
+export const SkeletonFeedCard: React.FC<{ theme: any }> = ({ theme }) => {
+  const animatedValue = React.useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(animatedValue, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(animatedValue, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, []);
+
+  const opacity = animatedValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 0.7],
+  });
+
+  return (
+    <View style={[styles.skeletonFeedCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+      <View style={styles.skeletonFeedHeader}>
+        <Animated.View style={[styles.skeletonFeedIcon, { backgroundColor: theme.border, opacity }]} />
+        <View style={styles.skeletonFeedContent}>
+          <Animated.View style={[styles.skeletonFeedName, { backgroundColor: theme.border, opacity }]} />
+          <Animated.View style={[styles.skeletonFeedUrl, { backgroundColor: theme.border, opacity }]} />
+        </View>
+        <Animated.View style={[styles.skeletonFeedType, { backgroundColor: theme.border, opacity }]} />
+      </View>
+    </View>
+  );
+};
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -242,5 +358,123 @@ const styles = StyleSheet.create({
   actionButtonText: {
     fontSize: 16,
     fontWeight: '500',
+  },
+  skeletonContainer: {
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+  },
+  skeletonCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    padding: 16,
+    marginBottom: 16,
+  },
+  skeletonHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  skeletonFavicon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 12,
+  },
+  skeletonHeaderText: {
+    flex: 1,
+    marginRight: 12,
+  },
+  skeletonSource: {
+    width: '80%',
+    height: 16,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  skeletonTime: {
+    width: '60%',
+    height: 14,
+    borderRadius: 7,
+  },
+  skeletonHeart: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+  },
+  skeletonTitle: {
+    width: '90%',
+    height: 24,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  skeletonTitle2: {
+    width: '70%',
+    height: 20,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  skeletonSummary: {
+    width: '100%',
+    height: 18,
+    borderRadius: 9,
+    marginBottom: 8,
+  },
+  skeletonSummary2: {
+    width: '90%',
+    height: 16,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  skeletonFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  skeletonMetric: {
+    width: '40%',
+    height: 16,
+    borderRadius: 8,
+  },
+  skeletonDate: {
+    width: '30%',
+    height: 14,
+    borderRadius: 7,
+  },
+  skeletonFeedCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    padding: 16,
+    marginBottom: 16,
+  },
+  skeletonFeedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  skeletonFeedIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 12,
+  },
+  skeletonFeedContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+  skeletonFeedName: {
+    width: '80%',
+    height: 18,
+    borderRadius: 9,
+    marginBottom: 4,
+  },
+  skeletonFeedUrl: {
+    width: '60%',
+    height: 14,
+    borderRadius: 7,
+  },
+  skeletonFeedType: {
+    width: 60,
+    height: 20,
+    borderRadius: 10,
   },
 }); 

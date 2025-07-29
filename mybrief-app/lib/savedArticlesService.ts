@@ -40,28 +40,41 @@ export const savedArticlesService = {
         return false;
       }
 
-      // Check if the article is already saved and read
-      let readAt = null;
-      
-      try {
-        const { data: savedReadData } = await supabase
-          .from('saved_articles')
-          .select('read_at')
-          .eq('user_id', user.id)
-          .eq('content_item_id', contentItemId)
-          .single();
+      // Check if the article is already saved
+      const { data: existingSaved } = await supabase
+        .from('saved_articles')
+        .select('read_at, saved_at')
+        .eq('user_id', user.id)
+        .eq('content_item_id', contentItemId)
+        .maybeSingle();
 
-        if (savedReadData?.read_at) {
-          readAt = savedReadData.read_at;
+      let readAt = existingSaved?.read_at || null;
+
+      // If not already saved, check if it was read in the main feed (tracked with saved_at = null)
+      if (!existingSaved?.saved_at && !readAt) {
+        try {
+          const { data: readData } = await supabase
+            .from('saved_articles')
+            .select('read_at')
+            .eq('user_id', user.id)
+            .eq('content_item_id', contentItemId)
+            .is('saved_at', null)
+            .not('read_at', 'is', null)
+            .maybeSingle();
+
+          if (readData?.read_at) {
+            readAt = readData.read_at;
+          }
+        } catch (readError) {
+          // No read status found
         }
-      } catch (savedError) {
-        // Article not found in saved_articles, which is expected for new saves
       }
 
       // Prepare the saved article data
       const savedArticleData: any = {
         user_id: user.id,
         content_item_id: contentItemId,
+        saved_at: new Date().toISOString(), // Mark as properly saved
       };
 
       // If the article was already read, preserve the read status
@@ -69,9 +82,28 @@ export const savedArticlesService = {
         savedArticleData.read_at = readAt;
       }
 
-      const { error } = await supabase
-        .from('saved_articles')
-        .insert(savedArticleData);
+      console.log('=== SAVING ARTICLE ===');
+      console.log('Content Item ID:', contentItemId);
+      console.log('Saved At:', savedArticleData.saved_at);
+      console.log('Existing Saved:', !!existingSaved);
+      console.log('=====================');
+
+      let error;
+      if (existingSaved) {
+        // Update existing entry
+        const { error: updateError } = await supabase
+          .from('saved_articles')
+          .update(savedArticleData)
+          .eq('user_id', user.id)
+          .eq('content_item_id', contentItemId);
+        error = updateError;
+      } else {
+        // Insert new entry
+        const { error: insertError } = await supabase
+          .from('saved_articles')
+          .insert(savedArticleData);
+        error = insertError;
+      }
 
       if (error) {
         console.error('Error saving article:', error);
@@ -163,10 +195,42 @@ export const savedArticlesService = {
         console.error('Error marking saved article as read:', savedError);
       }
 
-      // Try to update read_articles table if it exists
-      // We'll skip this for now since the table doesn't exist
-      // and the saved_articles table is sufficient for tracking read status
-      
+      // Also track read status for unsaved articles
+      // First check if an entry already exists
+      const { data: existingEntry } = await supabase
+        .from('saved_articles')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('content_item_id', contentItemId)
+        .maybeSingle();
+
+      if (existingEntry) {
+        // Entry exists, just update read_at
+        const { error: updateError } = await supabase
+          .from('saved_articles')
+          .update({ read_at: readAt })
+          .eq('user_id', user.id)
+          .eq('content_item_id', contentItemId);
+
+        if (updateError) {
+          console.error('Error updating read status:', updateError);
+        }
+      } else {
+        // Entry doesn't exist, create new one for read tracking
+        const { error: insertError } = await supabase
+          .from('saved_articles')
+          .insert({
+            user_id: user.id,
+            content_item_id: contentItemId,
+            read_at: readAt,
+            saved_at: null // This indicates it's only tracked for read status
+          });
+
+        if (insertError) {
+          console.error('Error tracking read status:', insertError);
+        }
+      }
+
       console.log('Article marked as read successfully');
       return true;
     } catch (error) {
@@ -230,6 +294,51 @@ export const savedArticlesService = {
     }
   },
 
+  // Clean up articles with null saved_at values
+  async cleanupNullSavedAt(): Promise<void> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // First, get all articles with null saved_at
+      const { data: nullSavedArticles, error: fetchError } = await supabase
+        .from('saved_articles')
+        .select('id, content_item_id')
+        .eq('user_id', user.id)
+        .is('saved_at', null);
+
+      if (fetchError) {
+        console.error('Error fetching articles with null saved_at:', fetchError);
+        return;
+      }
+
+      if (nullSavedArticles && nullSavedArticles.length > 0) {
+        console.log(`Found ${nullSavedArticles.length} articles with null saved_at, updating them...`);
+        
+        // Update each article with a different timestamp (older than current time)
+        const baseTime = new Date();
+        baseTime.setMinutes(baseTime.getMinutes() - nullSavedArticles.length); // Start from older time
+        
+        for (let i = 0; i < nullSavedArticles.length; i++) {
+          const timestamp = new Date(baseTime.getTime() + (i * 1000)); // Add 1 second for each article
+          
+          const { error } = await supabase
+            .from('saved_articles')
+            .update({ saved_at: timestamp.toISOString() })
+            .eq('id', nullSavedArticles[i].id);
+
+          if (error) {
+            console.error(`Error updating article ${nullSavedArticles[i].id}:`, error);
+          }
+        }
+        
+        console.log('Cleaned up articles with null saved_at');
+      }
+    } catch (error) {
+      console.error('Error in cleanupNullSavedAt:', error);
+    }
+  },
+
   // Get all saved articles for a user
   async getSavedArticles(): Promise<SavedArticle[]> {
     try {
@@ -239,6 +348,11 @@ export const savedArticlesService = {
         return [];
       }
 
+      console.log('=== FETCHING SAVED ARTICLES ===');
+      
+      // First, clean up any articles with null saved_at
+      await this.cleanupNullSavedAt();
+      
       const { data: savedArticles, error } = await supabase
         .from('saved_articles')
         .select(`
@@ -265,6 +379,7 @@ export const savedArticlesService = {
           )
         `)
         .eq('user_id', user.id)
+        .not('saved_at', 'is', null) // Only get articles that are properly saved
         .order('saved_at', { ascending: false });
 
       if (error) {
@@ -274,9 +389,13 @@ export const savedArticlesService = {
 
       console.log('Fetched saved articles:', savedArticles?.length || 0);
       
-      // Debug: Log the first article structure
+      // Debug: Log the first few articles with their saved_at dates
       if (savedArticles && savedArticles.length > 0) {
-        console.log('First saved article structure:', JSON.stringify(savedArticles[0], null, 2));
+        console.log('=== SAVED ARTICLES ORDER ===');
+        savedArticles.slice(0, 5).forEach((article, index) => {
+          console.log(`${index + 1}. "${article.content_items?.title}" - Saved: ${article.saved_at} - Published: ${article.content_items?.published_at}`);
+        });
+        console.log('============================');
       }
       
       // Map the data to match the interface structure

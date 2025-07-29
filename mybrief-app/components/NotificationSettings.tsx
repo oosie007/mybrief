@@ -12,17 +12,33 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../lib/theme';
 import { notificationService, NotificationPreferences } from '../lib/notificationService';
 import { supabase } from '../lib/supabase';
+import * as Notifications from 'expo-notifications';
 
 interface NotificationSettingsProps {
   onPreferencesChange?: (preferences: NotificationPreferences) => void;
 }
+
+// Common timezones for easier selection
+const COMMON_TIMEZONES = [
+  { name: 'South Africa (SAST)', value: 'Africa/Johannesburg' },
+  { name: 'UTC', value: 'UTC' },
+  { name: 'Eastern Time (EST/EDT)', value: 'America/New_York' },
+  { name: 'Central Time (CST/CDT)', value: 'America/Chicago' },
+  { name: 'Mountain Time (MST/MDT)', value: 'America/Denver' },
+  { name: 'Pacific Time (PST/PDT)', value: 'America/Los_Angeles' },
+  { name: 'London (GMT/BST)', value: 'Europe/London' },
+  { name: 'Paris (CET/CEST)', value: 'Europe/Paris' },
+  { name: 'Berlin (CET/CEST)', value: 'Europe/Berlin' },
+  { name: 'Tokyo (JST)', value: 'Asia/Tokyo' },
+  { name: 'Sydney (AEST/AEDT)', value: 'Australia/Sydney' },
+];
 
 const NotificationSettings: React.FC<NotificationSettingsProps> = ({ onPreferencesChange }) => {
   const { theme } = useTheme();
   const [preferences, setPreferences] = useState<NotificationPreferences>({
     enabled: true,
     dailyDigest: true,
-    digestTime: '07:00',
+    digestTime: '',
     timezone: 'UTC',
     soundEnabled: true,
     vibrationEnabled: true,
@@ -40,16 +56,23 @@ const NotificationSettings: React.FC<NotificationSettingsProps> = ({ onPreferenc
     try {
       setLoading(true);
       
-      // For demo mode, use default preferences
-      const defaultPreferences: NotificationPreferences = {
-        enabled: true,
-        dailyDigest: true,
-        digestTime: '07:00',
-        timezone: 'UTC',
-        soundEnabled: true,
-        vibrationEnabled: true
-      };
-      setPreferences(defaultPreferences);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const userPreferences = await notificationService.getNotificationPreferences(user.id);
+        setPreferences(userPreferences);
+      } else {
+        // For demo mode, use default preferences with device timezone
+        const deviceTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+        const defaultPreferences: NotificationPreferences = {
+          enabled: true,
+          dailyDigest: true,
+          digestTime: '07:00',
+          timezone: deviceTimezone,
+          soundEnabled: true,
+          vibrationEnabled: true
+        };
+        setPreferences(defaultPreferences);
+      }
     } catch (error) {
       console.error('Error loading notification preferences:', error);
     } finally {
@@ -79,17 +102,23 @@ const NotificationSettings: React.FC<NotificationSettingsProps> = ({ onPreferenc
 
   const updatePreference = async (key: keyof NotificationPreferences, value: any) => {
     try {
-      setSaving(true);
+      console.log('Updating preference:', key, value);
+      
+      // Always update local state immediately
       const newPreferences = { ...preferences, [key]: value };
       setPreferences(newPreferences);
 
-      // For demo mode, just update local state
-      if (onPreferencesChange) {
-        onPreferencesChange(newPreferences);
+      setSaving(true);
+
+      // Save to database if user is authenticated
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await notificationService.updateNotificationPreferences(user.id, newPreferences);
       }
 
-      // Re-schedule notifications if time changed
-      if (key === 'digestTime' || key === 'enabled' || key === 'dailyDigest') {
+      // Schedule notifications when enabling or when time is set
+      if (key === 'enabled' || key === 'dailyDigest' || key === 'digestTime') {
+        console.log('Scheduling daily digest after preference change');
         await notificationService.scheduleDailyDigest();
       }
     } catch (error) {
@@ -100,16 +129,20 @@ const NotificationSettings: React.FC<NotificationSettingsProps> = ({ onPreferenc
     }
   };
 
-  const testNotification = async () => {
-    try {
-      await notificationService.sendDailyDigestNotification(
-        'This is a test notification to verify your settings are working correctly.'
-      );
-      Alert.alert('Test Notification', 'A test notification has been sent!');
-    } catch (error) {
-      console.error('Error sending test notification:', error);
-      Alert.alert('Error', 'Failed to send test notification');
-    }
+  const showTimezonePicker = () => {
+    const options = COMMON_TIMEZONES.map(tz => ({
+      text: tz.name,
+      onPress: () => updatePreference('timezone', tz.value)
+    }));
+
+    Alert.alert(
+      'Select Timezone',
+      'Choose your timezone:',
+      [
+        ...options,
+        { text: 'Cancel', style: 'cancel' }
+      ]
+    );
   };
 
   const SettingItem = ({ 
@@ -194,7 +227,7 @@ const NotificationSettings: React.FC<NotificationSettingsProps> = ({ onPreferenc
         <SettingItem
           icon="toggle"
           title="Enable Notifications"
-          subtitle="Receive notifications for daily digests and updates"
+          subtitle="Receive notifications for daily digests"
           rightElement={
             <Switch
               value={preferences.enabled}
@@ -208,7 +241,7 @@ const NotificationSettings: React.FC<NotificationSettingsProps> = ({ onPreferenc
 
         <SettingItem
           icon="newspaper"
-          title="Daily Digest Reminders"
+          title="Daily Digest"
           subtitle="Get notified when your daily digest is ready"
           rightElement={
             <Switch
@@ -221,22 +254,9 @@ const NotificationSettings: React.FC<NotificationSettingsProps> = ({ onPreferenc
           }
         />
 
-        <SettingItem
-          icon="time"
-          title="Digest Time"
-          subtitle={`Daily digest at ${preferences.digestTime}`}
-          rightElement={
-            <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
-          }
-          onPress={() => {
-            // Could open time picker here
-            Alert.alert('Digest Time', 'Use the form below to change notification time');
-          }}
-        />
-
         <View style={styles.formGroup}>
           <Text style={[styles.formLabel, { color: theme.text }]}>
-            Notification Time (24h format)
+            Notification Time
           </Text>
           <TextInput
             style={[styles.formInput, { 
@@ -246,53 +266,43 @@ const NotificationSettings: React.FC<NotificationSettingsProps> = ({ onPreferenc
             }]}
             placeholder="07:00"
             placeholderTextColor={theme.textMuted}
-            value={preferences.digestTime}
-            onChangeText={(value) => updatePreference('digestTime', value)}
-            editable={permissionsGranted && preferences.enabled}
+            value={preferences.digestTime || ''}
+            onChangeText={(value) => {
+              console.log('Time input changed:', value);
+              // Allow empty value and any input
+              setPreferences(prev => ({ ...prev, digestTime: value }));
+            }}
+            editable={true}
+            maxLength={5}
+            autoCapitalize="none"
+            autoCorrect={false}
+            clearButtonMode="while-editing"
           />
+          <TouchableOpacity
+            style={[styles.formButton, { backgroundColor: theme.accent }]}
+            onPress={() => {
+              console.log('Saving time:', preferences.digestTime);
+              updatePreference('digestTime', preferences.digestTime);
+            }}
+            disabled={saving}
+          >
+            <Text style={[styles.formButtonText, { color: theme.accentText }]}>
+              {saving ? 'Saving...' : 'Save Time'}
+            </Text>
+          </TouchableOpacity>
+          <Text style={[styles.formHelp, { color: theme.textMuted }]}>
+            Format: HH:MM (24h) • Timezone: {preferences.timezone}
+          </Text>
         </View>
 
         <SettingItem
-          icon="volume-high"
-          title="Sound"
-          subtitle="Play sound for notifications"
-          rightElement={
-            <Switch
-              value={preferences.soundEnabled}
-              onValueChange={(value) => updatePreference('soundEnabled', value)}
-              trackColor={{ false: theme.border, true: theme.accent }}
-              thumbColor={theme.background}
-              disabled={!permissionsGranted || !preferences.enabled}
-            />
-          }
-        />
-
-        <SettingItem
-          icon="phone-portrait"
-          title="Vibration"
-          subtitle="Vibrate for notifications"
-          rightElement={
-            <Switch
-              value={preferences.vibrationEnabled}
-              onValueChange={(value) => updatePreference('vibrationEnabled', value)}
-              trackColor={{ false: theme.border, true: theme.accent }}
-              thumbColor={theme.background}
-              disabled={!permissionsGranted || !preferences.enabled}
-            />
-          }
-        />
-      </View>
-
-      {/* Test Section */}
-      <View style={[styles.section, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-        <SettingItem
-          icon="send"
-          title="Test Notification"
-          subtitle="Send a test notification to verify settings"
+          icon="globe"
+          title="Timezone"
+          subtitle={preferences.timezone}
           rightElement={
             <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
           }
-          onPress={testNotification}
+          onPress={showTimezonePicker}
         />
       </View>
     </View>
@@ -371,6 +381,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     fontSize: 16,
+  },
+  formButton: {
+    borderRadius: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  formButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  formHelp: {
+    marginTop: 4,
+    fontSize: 12,
   },
 });
 

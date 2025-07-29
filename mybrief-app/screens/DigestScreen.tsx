@@ -14,11 +14,12 @@ import {
   Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 import { getDailyDigest } from '../lib/digestStorage';
 import { StoredDigest } from '../lib/digestStorage';
-import { LoadingState, ErrorState, NoDigestState } from '../components/UIStates';
+import { LoadingState, ErrorState, NoDigestState, SkeletonLoadingState } from '../components/UIStates';
 import { aggregateUserContent, debugContent } from '../lib/digestGenerator';
 import { getFeedSourceFavicon } from '../lib/faviconService';
 import ArticleViewer from '../components/ArticleViewer';
@@ -38,6 +39,7 @@ interface ContentItem {
   feed_sources: {
     name: string;
     type: string;
+    category?: string;
   };
   published_at?: string; // Added for filtering
   author?: string; // Added for RSS content
@@ -54,7 +56,7 @@ const DigestScreen = ({ navigation }: any) => {
   const { theme, isDarkMode, toggleTheme } = useTheme();
   const [activeCategory, setActiveCategory] = useState('All');
   const [digest, setDigest] = useState<StoredDigest | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Changed from true to false
   const [refreshing, setRefreshing] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState<ContentItem | null>(null);
   const [displayMode, setDisplayMode] = useState<'minimal' | 'rich'>('minimal');
@@ -72,7 +74,65 @@ const DigestScreen = ({ navigation }: any) => {
   const filtersAnimation = useRef(new Animated.Value(0)).current;
   const searchAnimation = useRef(new Animated.Value(0)).current;
 
-  const categories = ['All', 'Technology', 'Business', 'Startups', 'Productivity', 'News', 'Social'];
+  // Caching state
+  const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [hasCachedContent, setHasCachedContent] = useState(false);
+
+  const categories = ['All', 'Technology', 'Business', 'Startups', 'Productivity', 'News', 'Communities', 'Science', 'Health', 'Finance', 'Entertainment', 'Education', 'Politics', 'Sports', 'Lifestyle'];
+
+  // Cache duration: 2 hours in milliseconds
+  const CACHE_DURATION = 2 * 60 * 60 * 1000;
+  // Loading timeout: 3 seconds
+  const LOADING_TIMEOUT = 3000;
+
+  // Cache keys
+  const CACHE_KEY = 'digest_cache';
+  const CACHE_TIMESTAMP_KEY = 'digest_cache_timestamp';
+
+  const shouldRefreshContent = () => {
+    const now = Date.now();
+    const timeSinceLastRefresh = now - lastRefreshTime;
+    return timeSinceLastRefresh > CACHE_DURATION;
+  };
+
+  // Save digest to cache
+  const saveDigestToCache = async (digestData: StoredDigest) => {
+    try {
+      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(digestData));
+      await AsyncStorage.setItem(CACHE_TIMESTAMP_KEY, Date.now().toString());
+      console.log('Digest saved to cache');
+    } catch (error) {
+      console.error('Error saving digest to cache:', error);
+    }
+  };
+
+  // Load digest from cache
+  const loadDigestFromCache = async (): Promise<StoredDigest | null> => {
+    try {
+      const cachedDigest = await AsyncStorage.getItem(CACHE_KEY);
+      const cacheTimestamp = await AsyncStorage.getItem(CACHE_TIMESTAMP_KEY);
+      
+      if (cachedDigest && cacheTimestamp) {
+        const timestamp = parseInt(cacheTimestamp);
+        const now = Date.now();
+        
+        // Check if cache is still valid (within 2 hours)
+        if (now - timestamp < CACHE_DURATION) {
+          console.log('Loading digest from cache');
+          return JSON.parse(cachedDigest);
+        } else {
+          console.log('Cache expired, clearing');
+          await AsyncStorage.removeItem(CACHE_KEY);
+          await AsyncStorage.removeItem(CACHE_TIMESTAMP_KEY);
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error('Error loading digest from cache:', error);
+      return null;
+    }
+  };
 
   const toggleFilters = () => {
     const toValue = filtersVisible ? 0 : 1;
@@ -95,10 +155,79 @@ const DigestScreen = ({ navigation }: any) => {
   };
 
   useEffect(() => {
-    loadTodayDigest();
-    loadSavedArticles();
-    loadReadArticles();
+    const initializeScreen = async () => {
+      console.log('=== INITIALIZING SCREEN ===');
+      
+      // Set loading to true initially to prevent flash
+      setLoading(true);
+      
+      // Try to load from cache first
+      const cachedDigest = await loadDigestFromCache();
+      if (cachedDigest) {
+        console.log('Found cached digest, setting it immediately');
+        setDigest(cachedDigest);
+        setHasCachedContent(true);
+        setLoading(false);
+        setIsInitialLoad(false);
+      } else {
+        console.log('No cached digest found, will load fresh data');
+        // Keep loading true until we get fresh data
+      }
+      
+      // Always load fresh data in background
+      loadTodayDigest();
+      loadSavedArticles();
+      loadReadArticles();
+    };
+    
+    initializeScreen();
   }, []);
+
+  // Ensure loading is false when we have digest content
+  useEffect(() => {
+    if (digest && loading) {
+      console.log('Found digest content, setting loading to false');
+      setLoading(false);
+      setHasCachedContent(true);
+    }
+  }, [digest, loading]);
+
+  // Background refresh when screen comes into focus
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      console.log('=== FOCUS LISTENER DEBUG ===');
+      console.log('hasCachedContent:', hasCachedContent);
+      console.log('loading:', loading);
+      console.log('digest exists:', !!digest);
+      console.log('shouldRefreshContent():', shouldRefreshContent());
+      console.log('================================');
+      
+      // If we have digest content, ensure loading is false and preserve content
+      if (digest) {
+        console.log('Setting loading to false from focus listener');
+        setLoading(false);
+        setHasCachedContent(true);
+        // If content is stale, refresh in background without clearing existing content
+        if (shouldRefreshContent()) {
+          console.log('Content is stale, refreshing in background');
+          // Don't clear existing digest, just refresh in background
+          loadTodayDigest(true);
+        }
+      } else {
+        // If no digest, try to load from cache first
+        loadDigestFromCache().then(cachedDigest => {
+          if (cachedDigest) {
+            console.log('Found cached digest on focus, setting it');
+            setDigest(cachedDigest);
+            setHasCachedContent(true);
+            setLoading(false);
+          }
+        });
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation, hasCachedContent, lastRefreshTime, digest]);
 
   const loadReadArticles = async () => {
     try {
@@ -123,9 +252,43 @@ const DigestScreen = ({ navigation }: any) => {
     }
   };
 
-  const loadTodayDigest = async () => {
+  const loadTodayDigest = async (forceRefresh = false) => {
     try {
-      setLoading(true);
+      console.log('=== LOAD TODAY DIGEST DEBUG ===');
+      console.log('forceRefresh:', forceRefresh);
+      console.log('hasCachedContent:', hasCachedContent);
+      console.log('shouldRefreshContent():', shouldRefreshContent());
+      console.log('isInitialLoad:', isInitialLoad);
+      console.log('loading:', loading);
+      console.log('digest exists:', !!digest);
+      console.log('================================');
+
+      // If we have digest content and it's not a forced refresh, show it immediately
+      if (!forceRefresh && digest) {
+        console.log('Using existing digest content, setting loading to false');
+        setLoading(false);
+        setHasCachedContent(true);
+        return;
+      }
+
+      // Only show loading on initial load or forced refresh, and only if we don't have content
+      if ((isInitialLoad || forceRefresh) && !digest) {
+        console.log('Setting loading to true');
+        setLoading(true);
+        
+        // Set a timeout to prevent loading from taking too long
+        setTimeout(() => {
+          if (loading) {
+            console.log('Loading timeout reached, setting loading to false');
+            setLoading(false);
+          }
+        }, LOADING_TIMEOUT);
+      } else if (forceRefresh && digest) {
+        // For background refreshes when we have content, don't show loading and preserve existing content
+        console.log('Background refresh with existing content, not showing loading');
+        setLoading(false);
+        // Don't clear the digest, just update it in the background
+      }
       setError(null);
 
       // Debug: Check what content exists in the database
@@ -148,6 +311,13 @@ const DigestScreen = ({ navigation }: any) => {
       const contentItems = await aggregateUserContent(userId, today);
 
       console.log('Found content items:', contentItems?.length || 0);
+
+      // Set loading to false immediately when we have content
+      if (contentItems && contentItems.length > 0) {
+        console.log('Content found, setting loading to false immediately');
+        setLoading(false);
+        setHasCachedContent(true);
+      }
 
       if (!contentItems || contentItems.length === 0) {
         // Fallback to demo data
@@ -200,70 +370,73 @@ const DigestScreen = ({ navigation }: any) => {
               digest_id: 'demo-digest',
               content_item_id: 'content-4',
               relevance_score: 78,
-              category: 'Technology',
-              summary: 'Deep dive into optimization strategies for mobile app performance.',
-              key_points: ['Mobile optimization', 'Performance', 'Development'],
-              estimated_read_time: 7,
+              category: 'Business',
+              summary: 'Startup funding trends show increased focus on sustainable business models.',
+              key_points: ['Funding trends', 'Sustainability', 'Business models'],
+              estimated_read_time: 4,
               display_order: 3
             },
             {
               id: '5',
               digest_id: 'demo-digest',
               content_item_id: 'content-5',
-              relevance_score: 85,
-              category: 'Business',
-              summary: 'Q3 investments in green technology surpass $8.2B.',
-              key_points: ['Green tech', 'Investment trends', 'Sustainability'],
-              estimated_read_time: 5,
+              relevance_score: 75,
+              category: 'News',
+              summary: 'Global markets respond to new regulatory frameworks in tech sector.',
+              key_points: ['Market response', 'Regulations', 'Tech sector'],
+              estimated_read_time: 3,
               display_order: 4
             },
             {
               id: '6',
               digest_id: 'demo-digest',
               content_item_id: 'content-6',
-              relevance_score: 90,
-              category: 'Technology',
-              summary: 'How pair programming with AI assistants is changing development.',
-              key_points: ['AI assistants', 'Pair programming', 'Development workflow'],
-              estimated_read_time: 6,
+              relevance_score: 72,
+              category: 'Communities',
+              summary: 'Online communities discuss the future of remote work and digital nomadism.',
+              key_points: ['Remote work', 'Digital nomadism', 'Online communities'],
+              estimated_read_time: 5,
               display_order: 5
             }
           ]
         };
         setDigest(mockDigest);
+        await saveDigestToCache(mockDigest);
       } else {
-        // Use the real content items directly
-        console.log('Using real content, mapping to digest format');
-        const mappedDigest = {
-          id: 'live-digest',
+        // Create digest from real content
+        const mockDigest: StoredDigest = {
+          id: 'real-digest',
           user_id: userId,
           digest_date: today,
-          summary: `Your latest articles for today`,
+          summary: `Today's digest features ${contentItems.length} articles from your feeds.`,
           total_items: contentItems.length,
-          estimated_read_time: contentItems.length * 3,
+          estimated_read_time: contentItems.reduce((total, item) => total + 3, 0), // Default 3 minutes per article
           created_at: new Date().toISOString(),
-          content_items: contentItems.map((item, idx) => ({
-            id: item.id,
-            digest_id: 'live-digest',
+          content_items: contentItems.map((item, index) => ({
+            id: `real-${index}`,
+            digest_id: 'real-digest',
             content_item_id: item.id,
-            relevance_score: 0,
+            relevance_score: 0, // Default relevance score
             category: item.feed_sources?.name || 'General',
-            summary: item.title || item.description || '',
-            key_points: [],
-            estimated_read_time: 3,
-            display_order: idx,
-            // Add the full content data for display
+            summary: item.description || item.title || '',
+            key_points: [], // No key points from raw content
+            estimated_read_time: 3, // Default 3 minutes
+            display_order: index,
             content_data: item
           }))
         };
-        console.log('Mapped digest:', mappedDigest);
-        console.log('Content items in mapped digest:', mappedDigest.content_items.length);
-        setDigest(mappedDigest);
+        setDigest(mockDigest);
+        await saveDigestToCache(mockDigest);
       }
+
+      // Update cache state
+      setLastRefreshTime(Date.now());
+      setHasCachedContent(true);
+      setIsInitialLoad(false);
+      setLoading(false);
     } catch (error) {
       console.error('Error loading digest:', error);
-      setError('Failed to load today\'s digest. Please try again.');
-    } finally {
+      setError('Failed to load digest');
       setLoading(false);
     }
   };
@@ -352,7 +525,7 @@ const DigestScreen = ({ navigation }: any) => {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadTodayDigest();
+    await loadTodayDigest(true); // Force refresh
     await loadSavedArticles();
     await loadReadArticles();
     setRefreshing(false);
@@ -380,7 +553,8 @@ const DigestScreen = ({ navigation }: any) => {
             newSet.delete(article.id);
             return newSet;
           });
-          // Removed alert for unsaving
+          // Trigger refresh of saved articles screen
+          navigation.setParams({ refreshSaved: Date.now() });
         } else {
           console.error('Failed to remove article from saved items');
         }
@@ -389,7 +563,8 @@ const DigestScreen = ({ navigation }: any) => {
         const success = await savedArticlesService.saveArticle(article.id);
         if (success) {
           setSavedArticles(prev => new Set([...prev, article.id]));
-          // Removed alert for saving
+          // Trigger refresh of saved articles screen
+          navigation.setParams({ refreshSaved: Date.now() });
         } else {
           console.error('Failed to save article');
         }
@@ -401,12 +576,54 @@ const DigestScreen = ({ navigation }: any) => {
 
   const handleShareArticle = async (article: ContentItem) => {
     try {
-      // For now, just open the URL directly since we don't have a SavedArticle object
-      const url = article.url;
-      if (url) {
-        // Use expo-linking to open the URL
-        const Linking = await import('expo-linking');
-        await Linking.openURL(url);
+      // Try to use Web Share API if available
+      if (navigator.share) {
+        await navigator.share({
+          title: article.title,
+          text: `${article.title}\n\n${article.url}`,
+          url: article.url,
+        });
+      } else {
+        // For Expo Go, show a custom share sheet
+        Alert.alert(
+          'Share Article',
+          `${article.title}\n\n${article.url}`,
+          [
+            { 
+              text: 'Copy Link', 
+              onPress: async () => {
+                const Clipboard = await import('expo-clipboard');
+                await Clipboard.setStringAsync(`${article.title}\n\n${article.url}`);
+                Alert.alert('Copied!', 'Article link copied to clipboard');
+              }
+            },
+            { 
+              text: 'Open in Browser', 
+              onPress: async () => {
+                const Linking = await import('expo-linking');
+                await Linking.openURL(article.url);
+              }
+            },
+            { 
+              text: 'Share via Messages', 
+              onPress: async () => {
+                const Linking = await import('expo-linking');
+                const message = encodeURIComponent(`${article.title}\n\n${article.url}`);
+                await Linking.openURL(`sms:&body=${message}`);
+              }
+            },
+            { 
+              text: 'Share via Mail', 
+              onPress: async () => {
+                const Linking = await import('expo-linking');
+                const subject = encodeURIComponent(article.title);
+                const body = encodeURIComponent(`${article.title}\n\n${article.url}`);
+                await Linking.openURL(`mailto:?subject=${subject}&body=${body}`);
+              }
+            },
+            { text: 'Cancel', style: 'cancel' }
+          ]
+        );
       }
     } catch (error) {
       console.error('Error sharing article:', error);
@@ -752,10 +969,6 @@ const DigestScreen = ({ navigation }: any) => {
   console.log('Selected category:', activeCategory);
   console.log('===================');
 
-  if (loading) {
-    return <LoadingState message="Loading your daily digest..." />;
-  }
-
   if (error) {
     return (
       <ErrorState
@@ -765,8 +978,6 @@ const DigestScreen = ({ navigation }: any) => {
       />
     );
   }
-
-
 
   // Get content items with full data from mock content map
   const getContentItems = () => {
@@ -808,18 +1019,19 @@ const DigestScreen = ({ navigation }: any) => {
           
           // Filter by category if not "All"
           if (activeCategory !== 'All') {
-            if (activeCategory === 'Social') {
+            if (activeCategory === 'Communities') {
               // Show only social content (Reddit, Twitter, etc.)
               if (!['reddit', 'twitter', 'social'].includes(contentItem.content_type)) {
                 return null;
               }
             } else {
-              // Show only non-social content for other categories
-              if (['reddit', 'twitter', 'social'].includes(contentItem.content_type)) {
-                return null;
-              }
-              // Also check the category field for RSS content
-              if (contentItem.category !== activeCategory) {
+              // For other categories, check the feed's actual category
+              // Get the feed source category from the feed_sources data
+              const feedCategory = contentItem.feed_sources?.category || contentItem.category;
+              
+              console.log(`Filtering "${contentItem.title}" - Feed category: ${feedCategory}, Active category: ${activeCategory}`);
+              
+              if (feedCategory !== activeCategory) {
                 return null;
               }
             }
@@ -847,25 +1059,22 @@ const DigestScreen = ({ navigation }: any) => {
     
     const newsArticles = allItems.filter(item => 
       item.content_type === 'rss' || 
-      item.content_type === 'article' || 
-      item.content_type === 'news'
+      item.content_type === 'news' ||
+      item.content_type === 'article'
     );
     
     const socialPosts = allItems.filter(item => 
       item.content_type === 'reddit' || 
       item.content_type === 'twitter' ||
       item.content_type === 'social'
-    ).sort((a, b) => (b.score || 0) - (a.score || 0)); // Sort by upvotes descending
+    );
     
     const videoPosts = allItems.filter(item => 
-      item.content_type === 'youtube'
-    ).sort((a, b) => (b.score || 0) - (a.score || 0)); // Sort by view count descending
+      item.content_type === 'youtube' || 
+      item.content_type === 'video'
+    );
     
-    return {
-      newsArticles,
-      socialPosts,
-      videoPosts
-    };
+    return { newsArticles, socialPosts, videoPosts };
   };
 
   const { newsArticles, socialPosts, videoPosts } = getContentByType();
@@ -995,8 +1204,16 @@ const DigestScreen = ({ navigation }: any) => {
         }
         showsVerticalScrollIndicator={false}
       >
-        {digest ? (
+        {loading && (refreshing || (!digest && !hasCachedContent && isInitialLoad)) ? (
           <>
+            {console.log('=== RENDER DEBUG: Showing skeleton loader ===')}
+            {console.log('loading:', loading, 'hasCachedContent:', hasCachedContent, 'digest:', !!digest, 'isInitialLoad:', isInitialLoad, 'refreshing:', refreshing)}
+            <SkeletonLoadingState />
+          </>
+        ) : digest ? (
+          <>
+            {console.log('=== RENDER DEBUG: Showing actual content ===')}
+            {console.log('loading:', loading, 'hasCachedContent:', hasCachedContent, 'digest:', !!digest)}
             {/* News & Articles Section */}
             {newsArticles.length > 0 && (
               <>
@@ -1017,11 +1234,11 @@ const DigestScreen = ({ navigation }: any) => {
               </>
             )}
 
-            {/* Social Section */}
+            {/* Communities Section (Reddit) */}
             {socialPosts.length > 0 && (
               <>
                 <View style={styles.sectionHeader}>
-                  <Text style={[styles.sectionTitle, { color: theme.text }]}>Social</Text>
+                  <Text style={[styles.sectionTitle, { color: theme.text }]}>Communities</Text>
                   <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
                     {socialPosts.length} post{socialPosts.length !== 1 ? 's' : ''} from communities
                   </Text>
@@ -1070,9 +1287,9 @@ const DigestScreen = ({ navigation }: any) => {
               <View style={[styles.dividerLine, { backgroundColor: theme.divider }]} />
             </View>
           </>
-        ) : (
+        ) : !loading && !isInitialLoad ? (
           <NoDigestState onRefresh={onRefresh} />
-        )}
+        ) : null}
       </ScrollView>
 
       {/* Save Article Modal */}
@@ -1094,6 +1311,9 @@ const DigestScreen = ({ navigation }: any) => {
             setArticleViewerVisible(false);
             setSelectedArticle(null);
           }}
+          onSave={(article) => handleSaveArticle(selectedArticle)}
+          onShare={(article) => handleShareArticle(selectedArticle)}
+          isSaved={savedArticles.has(selectedArticle.id)}
         />
       )}
 

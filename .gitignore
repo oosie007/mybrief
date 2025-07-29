@@ -1,1 +1,6 @@
 mybrief-app/.env
+
+# Debug files with sensitive keys
+debug/
+.env
+node_modules/dotenv/

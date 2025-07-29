@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, ActivityIndicator } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
+import * as Notifications from 'expo-notifications';
 import { supabase } from './lib/supabase';
 import { notificationService } from './lib/notificationService';
 import { useTheme } from './lib/theme';
@@ -24,6 +25,7 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
   const [forceRefresh, setForceRefresh] = useState(0);
+  const navigationRef = useRef<NavigationContainerRef<any>>(null);
 
   const refreshUserData = async () => {
     try {
@@ -41,6 +43,23 @@ export default function App() {
       console.error('Error refreshing user data:', error);
     }
   };
+
+  // Handle notification responses
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const { data } = response.notification.request.content;
+      
+      if (data?.type === 'daily_digest') {
+        console.log('Notification tapped - navigating to Home');
+        // Navigate to the main feeds page
+        if (navigationRef.current && user && onboardingCompleted) {
+          navigationRef.current.navigate('Home');
+        }
+      }
+    });
+
+    return () => subscription.remove();
+  }, [user, onboardingCompleted]);
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -113,7 +132,7 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <StatusBar style="auto" />
       <Stack.Navigator
         screenOptions={{

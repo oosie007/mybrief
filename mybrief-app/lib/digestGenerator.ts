@@ -1,5 +1,19 @@
 import { supabase } from './supabase';
 
+// Digest configuration constants
+const DIGEST_CONFIG = {
+  TIME_WINDOW_HOURS: 24, // Last 24 hours
+  MAX_ITEMS_PER_FEED: 3, // Max 3 items per individual feed
+  TOTAL_MAX_ITEMS: 50, // Max 50 total items
+  ENGAGEMENT_WEIGHTS: {
+    RECENCY: 2, // Points per hour (0-24 hours)
+    REDDIT_UPVOTES: 0.1, // Points per upvote
+    REDDIT_COMMENTS: 0.5, // Points per comment
+    YOUTUBE_VIEWS: 0.001, // Points per view (when available)
+    YOUTUBE_LIKES: 0.1, // Points per like (when available)
+  }
+} as const;
+
 export interface ContentItem {
   id: string;
   title: string;
@@ -13,6 +27,7 @@ export interface ContentItem {
     name: string;
     type: string;
     favicon_url?: string;
+    category?: string;
   };
   // Reddit-specific fields
   score?: number;
@@ -58,10 +73,10 @@ export async function aggregateUserContent(
     }
 
     const userFeedConfig = userData?.feed_config || feedConfig || {
-      articles_per_feed: 10,
-      total_articles: 100, // Increased from 50 to 100
-      time_window_hours: 24,
-      use_time_window: false,
+      articles_per_feed: DIGEST_CONFIG.MAX_ITEMS_PER_FEED,
+      total_articles: DIGEST_CONFIG.TOTAL_MAX_ITEMS,
+      time_window_hours: DIGEST_CONFIG.TIME_WINDOW_HOURS,
+      use_time_window: false, // Default to 24-hour window
     };
 
     console.log('Using feed config:', userFeedConfig);
@@ -110,9 +125,9 @@ export async function aggregateUserContent(
       console.log(`Using time window: last ${userFeedConfig.time_window_hours} hours`);
       console.log(`Time window: ${startDate.toISOString()} to ${endDate.toISOString()}`);
     } else {
-      // Use time window: last 7 days to include more content
-      startDate.setDate(startDate.getDate() - 7);
-      console.log('Using time window: last 7 days to include more content');
+      // Use time window: last 24 hours for daily digest
+      startDate.setHours(startDate.getHours() - 24);
+      console.log('Using time window: last 24 hours for daily digest');
       console.log(`Time window: ${startDate.toISOString()} to ${endDate.toISOString()}`);
     }
 
@@ -133,7 +148,8 @@ export async function aggregateUserContent(
         feed_sources (
           name,
           type,
-          favicon_url
+          favicon_url,
+          category
         ),
         author,
         score,
@@ -178,7 +194,8 @@ export async function aggregateUserContent(
       feed_sources: {
         name: (item.feed_sources as any)?.name || 'Unknown',
         type: (item.feed_sources as any)?.type || 'rss',
-        favicon_url: (item.feed_sources as any)?.favicon_url || undefined
+        favicon_url: (item.feed_sources as any)?.favicon_url || undefined,
+        category: (item.feed_sources as any)?.category || undefined
       },
       author: item.author,
       score: item.score,
@@ -189,58 +206,48 @@ export async function aggregateUserContent(
       domain: item.domain
     }));
 
-    // Apply balanced content limits by type
+    // Apply balanced content limits per individual feed
     let limitedItems = mappedItems;
 
     if (!userFeedConfig.use_time_window) {
-      // Group items by content type first, then by feed source
-      const itemsByType: { [contentType: string]: ContentItem[] } = {};
+      // Group items by individual feed source (not by content type)
+      const itemsByFeed: { [feedId: string]: ContentItem[] } = {};
       mappedItems.forEach(item => {
-        const type = item.content_type || 'rss';
-        if (!itemsByType[type]) {
-          itemsByType[type] = [];
+        if (!itemsByFeed[item.feed_source_id]) {
+          itemsByFeed[item.feed_source_id] = [];
         }
-        itemsByType[type].push(item);
+        itemsByFeed[item.feed_source_id].push(item);
       });
 
-      // Group each type by feed source and limit per feed
-      const limitedByType: { [contentType: string]: ContentItem[] } = {};
-      Object.entries(itemsByType).forEach(([type, items]) => {
-        const itemsByFeed: { [feedId: string]: ContentItem[] } = {};
-        items.forEach(item => {
-          if (!itemsByFeed[item.feed_source_id]) {
-            itemsByFeed[item.feed_source_id] = [];
-          }
-          itemsByFeed[item.feed_source_id].push(item);
-        });
+      console.log(`Found ${Object.keys(itemsByFeed).length} unique feeds with content`);
 
-        // Limit to 10 articles per feed for each type
-        const limitedByFeed: ContentItem[] = [];
-        Object.values(itemsByFeed).forEach(feedItems => {
-          const limited = feedItems.slice(0, 10); // Max 10 per feed
-          limitedByFeed.push(...limited);
-        });
-
-        // Sort by published date (newest first) and limit to 10 per type
-        limitedByFeed.sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime());
-        limitedByType[type] = limitedByFeed.slice(0, 10); // Max 10 per type
+      // Limit per individual feed and sort by engagement
+      const limitedByFeed: ContentItem[] = [];
+      Object.entries(itemsByFeed).forEach(([feedId, feedItems]) => {
+        // Sort by engagement score first, then take top 3-5 per feed
+        const sortedByEngagement = sortByEngagement(feedItems);
+        const limited = sortedByEngagement.slice(0, DIGEST_CONFIG.MAX_ITEMS_PER_FEED);
+        limitedByFeed.push(...limited);
+        
+        console.log(`Feed ${feedId}: ${feedItems.length} items → ${limited.length} selected`);
       });
 
-      // Combine all types and limit total
-      const allLimited: ContentItem[] = [];
-      Object.values(limitedByType).forEach(items => {
-        allLimited.push(...items);
-      });
+      // Sort all items by engagement score and limit total
+      const finalSorted = sortByEngagement(limitedByFeed);
+      limitedItems = finalSorted.slice(0, userFeedConfig.total_articles);
 
-      // Sort by published date (newest first) and limit total
-      allLimited.sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime());
-      limitedItems = allLimited.slice(0, userFeedConfig.total_articles);
-
-      console.log(`Limited to 10 articles per feed, 10 per type, ${userFeedConfig.total_articles} total`);
+      console.log(`Limited to ${DIGEST_CONFIG.MAX_ITEMS_PER_FEED} articles per individual feed, ${userFeedConfig.total_articles} total (sorted by engagement)`);
       
-      // Log breakdown by type
-      Object.entries(limitedByType).forEach(([type, items]) => {
-        console.log(`${type}: ${items.length} items`);
+      // Log breakdown by feed source
+      const byFeed: { [key: string]: number } = {};
+      limitedItems.forEach(item => {
+        const feedName = item.feed_sources?.name || 'Unknown';
+        byFeed[feedName] = (byFeed[feedName] || 0) + 1;
+      });
+      
+      console.log('Content by feed source:');
+      Object.entries(byFeed).forEach(([feedName, count]) => {
+        console.log(`- ${feedName}: ${count} items`);
       });
     }
 
@@ -428,4 +435,47 @@ export async function debugContent() {
   } catch (error) {
     console.error('Debug error:', error);
   }
+} 
+
+/**
+ * Calculate engagement score for content ranking
+ */
+function calculateEngagementScore(item: ContentItem): number {
+  let score = 0;
+  
+  // Base score from published date (newer = higher score)
+  const hoursAgo = (Date.now() - new Date(item.published_at).getTime()) / (1000 * 60 * 60);
+  score += Math.max(0, DIGEST_CONFIG.TIME_WINDOW_HOURS - hoursAgo) * DIGEST_CONFIG.ENGAGEMENT_WEIGHTS.RECENCY;
+  
+  // Reddit-specific engagement
+  if (item.content_type === 'reddit') {
+    score += (item.score || 0) * DIGEST_CONFIG.ENGAGEMENT_WEIGHTS.REDDIT_UPVOTES;
+    score += (item.num_comments || 0) * DIGEST_CONFIG.ENGAGEMENT_WEIGHTS.REDDIT_COMMENTS;
+  }
+  
+  // YouTube-specific engagement
+  if (item.content_type === 'youtube') {
+    // You could add view count, like count here when available
+    // score += (item.view_count || 0) * DIGEST_CONFIG.ENGAGEMENT_WEIGHTS.YOUTUBE_VIEWS;
+    // score += (item.like_count || 0) * DIGEST_CONFIG.ENGAGEMENT_WEIGHTS.YOUTUBE_LIKES;
+  }
+  
+  // RSS/News: prioritize by recency and source reputation
+  if (item.content_type === 'rss') {
+    // Could add source reputation scoring here
+    // score += getSourceReputationScore(item.feed_sources?.name);
+  }
+  
+  return score;
+}
+
+/**
+ * Sort content by engagement score (highest first)
+ */
+function sortByEngagement(items: ContentItem[]): ContentItem[] {
+  return items.sort((a, b) => {
+    const scoreA = calculateEngagementScore(a);
+    const scoreB = calculateEngagementScore(b);
+    return scoreB - scoreA; // Highest score first
+  });
 } 

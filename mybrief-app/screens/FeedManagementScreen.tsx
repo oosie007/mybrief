@@ -14,8 +14,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../lib/theme';
 import { supabase } from '../lib/supabase';
-import { LoadingState, ErrorState, NoFeedsState } from '../components/UIStates';
+import { LoadingState, ErrorState, NoFeedsState, SkeletonFeedCard } from '../components/UIStates';
 import { getFeedSourceFavicon } from '../lib/faviconService';
+import { categorizeFeed, updateFeedCategory, FEED_CATEGORIES } from '../lib/feedCategorizer';
 
 const FEED_TYPES = [
   { 
@@ -57,7 +58,15 @@ const FeedManagementScreen = ({ navigation }: any) => {
   const [newFeedName, setNewFeedName] = useState('');
   const [newFeedUrl, setNewFeedUrl] = useState('');
 
+  const [searchQuery, setSearchQuery] = useState('');
   const [fetchingFeeds, setFetchingFeeds] = useState<Set<string>>(new Set());
+  
+  // Edit feed state
+  const [editingFeed, setEditingFeed] = useState<any>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editFeedName, setEditFeedName] = useState('');
+  const [editFeedCategory, setEditFeedCategory] = useState('');
+  const [editFeedUrl, setEditFeedUrl] = useState('');
 
   // Function to extract feed name from URL
   const extractFeedNameFromUrl = (url: string, type: string): string => {
@@ -186,7 +195,8 @@ const FeedManagementScreen = ({ navigation }: any) => {
             url,
             type,
             is_active,
-            favicon_url
+            favicon_url,
+            category
           )
         `)
         .eq('user_id', user.id)
@@ -256,6 +266,18 @@ const FeedManagementScreen = ({ navigation }: any) => {
         console.error('Error creating feed source:', feedSourceError);
         Alert.alert('Error', 'Failed to create feed source');
         return;
+      }
+
+      // Automatically categorize the feed
+      try {
+        const categorization = await categorizeFeed(feedName, newFeedUrl.trim());
+        console.log(`Auto-categorized "${feedName}" as: ${categorization.category} (confidence: ${categorization.confidence})`);
+        
+        // Update the feed source with the category
+        await updateFeedCategory(feedSource.id, categorization.category);
+      } catch (error) {
+        console.error('Error categorizing feed:', error);
+        // Don't fail the whole operation if categorization fails
       }
 
       // Then, link it to the user (use upsert to handle duplicates)
@@ -364,26 +386,102 @@ const FeedManagementScreen = ({ navigation }: any) => {
           style: 'destructive',
           onPress: async () => {
             try {
-                             const { error } = await supabase
-                 .from('user_feeds')
-                 .update({ is_active: false })
-                 .eq('id', userFeedId);
+              const { error } = await supabase
+                .from('user_feeds')
+                .delete()
+                .eq('id', userFeedId);
 
               if (error) {
                 console.error('Error removing feed:', error);
                 Alert.alert('Error', 'Failed to remove feed');
-              } else {
-                await fetchFeeds();
-                Alert.alert('Success', 'Feed removed successfully!');
+                return;
               }
+
+              // Refresh feeds
+              await fetchFeeds();
             } catch (error) {
               console.error('Error removing feed:', error);
               Alert.alert('Error', 'Failed to remove feed');
             }
-          },
-        },
+          }
+        }
       ]
     );
+  };
+
+  const handleEditFeed = async () => {
+    if (!editingFeed || !editFeedName.trim() || !editFeedUrl.trim()) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    // Basic URL validation
+    try {
+      new URL(editFeedUrl.trim());
+    } catch {
+      Alert.alert('Error', 'Please enter a valid URL');
+      return;
+    }
+
+    // Check if URL has changed
+    const urlChanged = editFeedUrl.trim() !== editingFeed.feed_sources?.url;
+    
+    if (urlChanged) {
+      Alert.alert(
+        'Change Feed URL',
+        'Changing the feed URL will affect content fetching. Are you sure you want to continue?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Continue',
+            onPress: () => updateFeed()
+          }
+        ]
+      );
+    } else {
+      updateFeed();
+    }
+  };
+
+  const updateFeed = async () => {
+    try {
+      // Update the feed source
+      const { error: updateError } = await supabase
+        .from('feed_sources')
+        .update({
+          name: editFeedName.trim(),
+          url: editFeedUrl.trim(),
+          category: editFeedCategory
+        })
+        .eq('id', editingFeed.feed_sources?.id);
+
+      if (updateError) {
+        console.error('Error updating feed:', updateError);
+        Alert.alert('Error', 'Failed to update feed');
+        return;
+      }
+
+      // Close modal and refresh feeds
+      setShowEditModal(false);
+      setEditingFeed(null);
+      setEditFeedName('');
+      setEditFeedCategory('');
+      setEditFeedUrl('');
+      await fetchFeeds();
+
+      Alert.alert('Success', 'Feed updated successfully');
+    } catch (error) {
+      console.error('Error updating feed:', error);
+      Alert.alert('Error', 'Failed to update feed');
+    }
+  };
+
+  const openEditModal = (feed: any) => {
+    setEditingFeed(feed);
+    setEditFeedName(feed.feed_sources?.name || '');
+    setEditFeedCategory(feed.feed_sources?.category || 'Technology');
+    setEditFeedUrl(feed.feed_sources?.url || '');
+    setShowEditModal(true);
   };
 
   const getSourceIcon = (source: string, type: string, sourceUrl?: string) => {
@@ -500,6 +598,10 @@ const FeedManagementScreen = ({ navigation }: any) => {
                   {sectionFeeds.map((feed: any) => {
                     const isFetching = fetchingFeeds.has(feed.feed_sources?.id);
                     
+                    if (isFetching) {
+                      return <SkeletonFeedCard key={feed.id} theme={theme} />;
+                    }
+                    
                     return (
                       <View key={feed.id} style={[styles.feedCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
                         <View style={styles.feedCardHeader}>
@@ -526,22 +628,29 @@ const FeedManagementScreen = ({ navigation }: any) => {
                               <Text style={[styles.feedType, { color: getSourceColor(feed.feed_sources?.type || '') }]}>
                                 {FEED_TYPES.find(t => t.type === feed.feed_sources?.type)?.label || 'Unknown'}
                               </Text>
-                              {isFetching && (
-                                <View style={styles.fetchingIndicator}>
-                                  <ActivityIndicator size={12} color={theme.accent} />
-                                  <Text style={[styles.fetchingText, { color: theme.accent }]}>
-                                    Fetching...
-                                  </Text>
-                                </View>
-                              )}
                             </View>
+                            {feed.feed_sources?.category && (
+                              <View style={styles.categoryContainer}>
+                                <Text style={[styles.categoryText, { color: theme.textSecondary }]}>
+                                  Category: {feed.feed_sources.category}
+                                </Text>
+                              </View>
+                            )}
                           </View>
-                          <TouchableOpacity
-                            style={styles.removeButton}
-                            onPress={() => handleRemoveFeed(feed.id)}
-                          >
-                            <Ionicons name="trash-outline" size={20} color={theme.textMuted} />
-                          </TouchableOpacity>
+                          <View style={styles.feedActions}>
+                            <TouchableOpacity
+                              style={styles.editButton}
+                              onPress={() => openEditModal(feed)}
+                            >
+                              <Ionicons name="create-outline" size={18} color={theme.textMuted} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.removeButton}
+                              onPress={() => handleRemoveFeed(feed.id)}
+                            >
+                              <Ionicons name="trash-outline" size={20} color={theme.textMuted} />
+                            </TouchableOpacity>
+                          </View>
                         </View>
                       </View>
                     );
@@ -684,9 +793,11 @@ const FeedManagementScreen = ({ navigation }: any) => {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
       <View style={[styles.header, { backgroundColor: theme.headerBg, borderBottomColor: theme.border }]}>
-        <View style={styles.headerSpacer} />
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
+        </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.text }]}>Feed Management</Text>
-        <View style={styles.headerSpacer} />
+        <View style={{ width: 24 }} />
       </View>
 
       {/* Tab Navigation */}
@@ -702,7 +813,7 @@ const FeedManagementScreen = ({ navigation }: any) => {
             styles.tabText,
             { color: activeTab === 'my-feeds' ? theme.accent : theme.textSecondary }
           ]}>
-            My Feeds ({feeds.length})
+            My Feeds
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -723,7 +834,94 @@ const FeedManagementScreen = ({ navigation }: any) => {
 
       {/* Content */}
       {activeTab === 'my-feeds' ? <MyFeedsScreen /> : <AddFeedScreen />}
-      
+
+      {/* Edit Feed Modal */}
+      {showEditModal && (
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Edit Feed</Text>
+              <TouchableOpacity onPress={() => setShowEditModal(false)}>
+                <Ionicons name="close" size={24} color={theme.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: theme.text }]}>Feed Name</Text>
+                <TextInput
+                  style={[styles.textInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
+                  value={editFeedName}
+                  onChangeText={setEditFeedName}
+                  placeholder="Enter feed name"
+                  placeholderTextColor={theme.textMuted}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: theme.text }]}>Feed URL</Text>
+                <TextInput
+                  style={[styles.textInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
+                  value={editFeedUrl}
+                  onChangeText={setEditFeedUrl}
+                  placeholder="Enter feed URL"
+                  placeholderTextColor={theme.textMuted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                />
+                <Text style={[styles.inputNote, { color: theme.textMuted }]}>
+                  Changing the URL will affect content fetching
+                </Text>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: theme.text }]}>Category</Text>
+                <View style={[styles.dropdownContainer, { backgroundColor: theme.background, borderColor: theme.border }]}>
+                  <TouchableOpacity
+                    style={styles.dropdownButton}
+                    onPress={() => {
+                      // Simple dropdown implementation - in a real app you'd use a proper dropdown library
+                      Alert.alert(
+                        'Select Category',
+                        'Choose a category',
+                        [
+                          ...FEED_CATEGORIES.map(category => ({
+                            text: category,
+                            onPress: () => setEditFeedCategory(category)
+                          })),
+                          { text: 'Cancel', style: 'cancel' as const }
+                        ]
+                      );
+                    }}
+                  >
+                    <Text style={[styles.dropdownText, { color: theme.text }]}>
+                      {editFeedCategory || 'Select category'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color={theme.textMuted} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: theme.background, borderColor: theme.border }]}
+                onPress={() => setShowEditModal(false)}
+              >
+                <Text style={[styles.modalButtonText, { color: theme.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: theme.accent }]}
+                onPress={handleEditFeed}
+              >
+                <Text style={[styles.modalButtonText, { color: theme.accentText }]}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
       {/* Bottom Navigation */}
       <View style={[styles.bottomNav, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
         <TouchableOpacity 
@@ -887,6 +1085,25 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 6,
   },
+  categoryContainer: {
+    marginTop: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 6,
+  },
+  categoryText: {
+    fontSize: 12,
+  },
+  feedActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  editButton: {
+    padding: 8,
+    borderRadius: 6,
+  },
   sectionHeader: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -921,11 +1138,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   textInput: {
+    borderWidth: 1,
+    borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    fontSize: 14,
+    fontSize: 16,
   },
   examplesContainer: {
     marginTop: 12,
@@ -1034,6 +1251,74 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginHorizontal: 4, // Increased margin
     minHeight: 40, // Reduced height
+  },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  modalContent: {
+    width: '90%',
+    borderRadius: 16,
+    padding: 24,
+    borderWidth: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  modalBody: {
+    marginBottom: 20,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    gap: 10,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  dropdownContainer: {
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  dropdownButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  dropdownText: {
+    fontSize: 14,
+    flex: 1,
+  },
+  inputNote: {
+    marginTop: 4,
+    fontSize: 12,
   },
 });
 

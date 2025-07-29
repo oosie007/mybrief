@@ -11,11 +11,12 @@ import {
   RefreshControl,
   Image,
   Linking,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../lib/theme';
 import { supabase } from '../lib/supabase';
-import { LoadingState, ErrorState, NoSavedArticlesState, SearchEmptyState } from '../components/UIStates';
+import { LoadingState, ErrorState, NoSavedArticlesState, SearchEmptyState, SkeletonLoadingState } from '../components/UIStates';
 import { getFeedSourceFavicon } from '../lib/faviconService';
 import ArticleViewer from '../components/ArticleViewer';
 import { savedArticlesService, SavedArticle } from '../lib/savedArticlesService';
@@ -34,28 +35,93 @@ const SavedArticlesScreen = ({ navigation }: any) => {
   const [showArticleViewer, setShowArticleViewer] = useState(false);
   const [currentArticle, setCurrentArticle] = useState<SavedArticle | null>(null);
 
+  // Caching state
+  const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [hasCachedContent, setHasCachedContent] = useState(false);
+  const [lastSaveTime, setLastSaveTime] = useState<number>(0); // Track when articles were saved
+
+  // Cache duration: 1 hour in milliseconds (saved articles change less frequently)
+  const CACHE_DURATION = 1 * 60 * 60 * 1000;
+
+  const shouldRefreshContent = () => {
+    const now = Date.now();
+    const timeSinceLastRefresh = now - lastRefreshTime;
+    return timeSinceLastRefresh > CACHE_DURATION;
+  };
+
   useEffect(() => {
     loadSavedArticles();
   }, []);
 
-  const loadSavedArticles = async () => {
+  // Listen for navigation parameter changes (when articles are saved from other screens)
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      const params = navigation.getState().routes.find((route: any) => route.name === 'SavedArticles')?.params;
+      if (params?.refreshSaved) {
+        // Clear the parameter to avoid repeated refreshes
+        navigation.setParams({ refreshSaved: undefined });
+        // Force refresh saved articles
+        loadSavedArticles(true);
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation]);
+
+  // Background refresh when screen comes into focus
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      // Always refresh saved articles when screen comes into focus
+      // This ensures newly saved articles appear immediately
+      if (hasCachedContent) {
+        // Check if we should refresh based on time or if there might be new saves
+        const now = Date.now();
+        const timeSinceLastRefresh = now - lastRefreshTime;
+        const timeSinceLastSave = now - lastSaveTime;
+        
+        // Refresh if content is stale OR if there might be new saves (within last 5 minutes)
+        if (timeSinceLastRefresh > CACHE_DURATION || timeSinceLastSave < 5 * 60 * 1000) {
+          loadSavedArticles(true); // Force refresh to get latest saved articles
+        }
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation, hasCachedContent, lastRefreshTime, lastSaveTime]);
+
+  const loadSavedArticles = async (forceRefresh = false) => {
     try {
-      setLoading(true);
+      // If we have cached content and it's not time to refresh, show cached content immediately
+      if (!forceRefresh && hasCachedContent && !shouldRefreshContent()) {
+        setLoading(false);
+        return;
+      }
+
+      // Only show loading on initial load or forced refresh
+      if (isInitialLoad || forceRefresh) {
+        setLoading(true);
+      }
       setLoadError(null);
       
       const articles = await savedArticlesService.getSavedArticles();
       setSavedArticles(articles);
+
+      // Update cache state
+      setLastRefreshTime(Date.now());
+      setHasCachedContent(true);
+      setIsInitialLoad(false);
+      setLoading(false);
     } catch (error) {
       console.error('Error loading saved articles:', error);
       setLoadError('Failed to load saved articles');
-    } finally {
       setLoading(false);
     }
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadSavedArticles();
+    await loadSavedArticles(true); // Force refresh
     setRefreshing(false);
   };
 
@@ -145,20 +211,104 @@ const SavedArticlesScreen = ({ navigation }: any) => {
       return;
     }
 
-    setCurrentArticle(article);
-    setShowArticleViewer(true);
-    
-    // Mark as read if not already read
-    if (!article.read_at) {
-      await savedArticlesService.markAsRead(article.content_item_id);
-      // Update local state
-      setSavedArticles(prev =>
-        prev.map(a =>
-          a.id === article.id
-            ? { ...a, read_at: new Date().toISOString() }
-            : a
-        )
-      );
+    try {
+      const supported = await Linking.canOpenURL(article.content_data.url);
+      
+      if (supported) {
+        setCurrentArticle(article);
+        setShowArticleViewer(true);
+        // Mark the article as read
+        await savedArticlesService.markAsRead(article.content_item_id);
+        // Update UI state
+        setSavedArticles(prev => 
+          prev.map(item => 
+            item.content_item_id === article.content_item_id 
+              ? { ...item, read_at: new Date().toISOString() }
+              : item
+          )
+        );
+      } else {
+        Alert.alert('Error', 'Cannot open this URL');
+      }
+    } catch (error) {
+      console.error('Error opening article:', error);
+      Alert.alert('Error', 'Failed to open article');
+    }
+  };
+
+  const handleSaveArticle = async (article: SavedArticle) => {
+    try {
+      // Since this is already a saved article, we'll remove it from saved
+      await savedArticlesService.unsaveArticle(article.content_item_id);
+      
+      // Update UI state
+      setSavedArticles(prev => prev.filter(item => item.content_item_id !== article.content_item_id));
+      
+      // Close the article viewer
+      setShowArticleViewer(false);
+      setCurrentArticle(null);
+      
+      Alert.alert('Success', 'Article removed from saved items');
+    } catch (error) {
+      console.error('Error removing saved article:', error);
+      Alert.alert('Error', 'Failed to remove article from saved items');
+    }
+  };
+
+  const handleShareArticle = async (article: SavedArticle) => {
+    try {
+      // Try to use Web Share API if available
+      if (navigator.share) {
+        await navigator.share({
+          title: article.content_data?.title || 'Article',
+          text: `${article.content_data?.title || 'Article'}\n\n${article.content_data?.url || ''}`,
+          url: article.content_data?.url || '',
+        });
+      } else {
+        // For Expo Go, show a custom share sheet
+        Alert.alert(
+          'Share Article',
+          `${article.content_data?.title || 'Article'}\n\n${article.content_data?.url || ''}`,
+          [
+            { 
+              text: 'Copy Link', 
+              onPress: async () => {
+                const Clipboard = await import('expo-clipboard');
+                await Clipboard.setStringAsync(`${article.content_data?.title || 'Article'}\n\n${article.content_data?.url || ''}`);
+                Alert.alert('Copied!', 'Article link copied to clipboard');
+              }
+            },
+            { 
+              text: 'Open in Browser', 
+              onPress: async () => {
+                const Linking = await import('expo-linking');
+                await Linking.openURL(article.content_data?.url || '');
+              }
+            },
+            { 
+              text: 'Share via Messages', 
+              onPress: async () => {
+                const Linking = await import('expo-linking');
+                const message = encodeURIComponent(`${article.content_data?.title || 'Article'}\n\n${article.content_data?.url || ''}`);
+                await Linking.openURL(`sms:&body=${message}`);
+              }
+            },
+            { 
+              text: 'Share via Mail', 
+              onPress: async () => {
+                const Linking = await import('expo-linking');
+                const subject = encodeURIComponent(article.content_data?.title || 'Article');
+                const body = encodeURIComponent(`${article.content_data?.title || 'Article'}\n\n${article.content_data?.url || ''}`);
+                await Linking.openURL(`mailto:?subject=${subject}&body=${body}`);
+              }
+            },
+            { text: 'Cancel', style: 'cancel' }
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Error sharing article:', error);
+      Alert.alert('Error', 'Failed to share article');
     }
   };
 
@@ -336,10 +486,6 @@ const SavedArticlesScreen = ({ navigation }: any) => {
     );
   };
 
-  if (loading) {
-    return <LoadingState message="Loading saved articles..." />;
-  }
-
   if (loadError) {
     return (
       <ErrorState
@@ -411,23 +557,32 @@ const SavedArticlesScreen = ({ navigation }: any) => {
       </View>
 
       {/* Content */}
-      <FlatList
-        data={filteredArticles}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <SavedArticleCard article={item} />}
-        contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        ListEmptyComponent={
-          searchQuery ? (
-            <SearchEmptyState query={searchQuery} />
-          ) : (
-            <NoSavedArticlesState onAddFeeds={() => navigation.navigate('FeedManagement')} />
-          )
-        }
-        showsVerticalScrollIndicator={false}
-      />
+      {loading ? (
+        <ScrollView 
+          style={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+        >
+          <SkeletonLoadingState />
+        </ScrollView>
+      ) : (
+        <FlatList
+          data={filteredArticles}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <SavedArticleCard article={item} />}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          ListEmptyComponent={
+            searchQuery ? (
+              <SearchEmptyState query={searchQuery} />
+            ) : (
+              <NoSavedArticlesState onAddFeeds={() => navigation.navigate('FeedManagement')} />
+            )
+          }
+          showsVerticalScrollIndicator={false}
+        />
+      )}
       
       {/* Bottom Navigation */}
       <View style={[styles.bottomNav, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
@@ -469,6 +624,9 @@ const SavedArticlesScreen = ({ navigation }: any) => {
             setShowArticleViewer(false);
             setCurrentArticle(null);
           }}
+          onSave={(article) => handleSaveArticle(currentArticle)}
+          onShare={(article) => handleShareArticle(currentArticle)}
+          isSaved={true} // Always true since this is from saved articles
         />
       )}
     </View>
@@ -537,6 +695,9 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 16,
     paddingTop: 12,
+  },
+  contentContainer: {
+    flex: 1,
   },
   contentCard: {
     borderRadius: 8,
