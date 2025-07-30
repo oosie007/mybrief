@@ -115,6 +115,12 @@ export async function aggregateUserContent(
     const feedSourceIds = userFeeds.map(feed => feed.feed_source_id);
     console.log('Feed source IDs:', feedSourceIds);
 
+    // If no feed sources, return empty array to avoid UUID error
+    if (!feedSourceIds || feedSourceIds.length === 0) {
+      console.log('No feed sources found, returning empty content array');
+      return [];
+    }
+
     // Calculate date range based on user configuration
     const startDate = new Date();
     const endDate = new Date();
@@ -125,14 +131,41 @@ export async function aggregateUserContent(
       console.log(`Using time window: last ${userFeedConfig.time_window_hours} hours`);
       console.log(`Time window: ${startDate.toISOString()} to ${endDate.toISOString()}`);
     } else {
-      // Use time window: last 24 hours for daily digest
-      startDate.setHours(startDate.getHours() - 24);
-      console.log('Using time window: last 24 hours for daily digest');
+      // Use time window: last 7 days for daily digest (temporarily extended for debugging)
+      startDate.setDate(startDate.getDate() - 7);
+      console.log('Using time window: last 7 days for daily digest (extended for debugging)');
       console.log(`Time window: ${startDate.toISOString()} to ${endDate.toISOString()}`);
     }
 
     console.log('Searching for content between:', startDate.toISOString(), 'and', endDate.toISOString());
     console.log('Current time:', new Date().toISOString());
+    console.log('Time window in hours:', (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60));
+
+    // First, let's check what content exists without time filtering
+    const { data: allContent, error: allContentError } = await supabase
+      .from('content_items')
+      .select(`
+        id,
+        title,
+        published_at,
+        feed_source_id
+      `)
+      .in('feed_source_id', feedSourceIds)
+      .order('published_at', { ascending: false })
+      .limit(5);
+
+    if (allContentError) {
+      console.error('Error fetching all content:', allContentError);
+    } else {
+      console.log('All content found (without time filter):', allContent?.length || 0);
+      if (allContent && allContent.length > 0) {
+        allContent.forEach((item, index) => {
+          const publishedDate = new Date(item.published_at);
+          const hoursAgo = Math.round((new Date().getTime() - publishedDate.getTime()) / (1000 * 60 * 60));
+          console.log(`All content ${index + 1}: "${item.title}" - Published: ${item.published_at} (${hoursAgo} hours ago)`);
+        });
+      }
+    }
 
     const { data: contentItems, error: contentError } = await supabase
       .from('content_items')
@@ -294,6 +327,12 @@ export async function getUndigestedContent(userId: string): Promise<ContentItem[
     }
 
     const feedSourceIds = userFeeds.map(feed => feed.feed_source_id);
+
+    // If no feed sources, return empty array to avoid UUID error
+    if (!feedSourceIds || feedSourceIds.length === 0) {
+      console.log('No feed sources found in getUndigestedContent, returning empty array');
+      return [];
+    }
 
     // Get content items that haven't been included in any digest
     const { data: contentItems, error: contentError } = await supabase

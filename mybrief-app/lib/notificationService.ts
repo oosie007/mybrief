@@ -62,6 +62,33 @@ class NotificationService {
   }
 
   /**
+   * Convert time from user's timezone to device timezone for notifications
+   */
+  private convertTimeToUserTimezone(hours: number, minutes: number, userTimezone: string): { hours: number; minutes: number } {
+    try {
+      // Create a date object in the user's timezone
+      const userDate = new Date();
+      const userTimeString = `${userDate.getFullYear()}-${String(userDate.getMonth() + 1).padStart(2, '0')}-${String(userDate.getDate()).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+      
+      // Create the date in user's timezone
+      const userDateTime = new Date(userTimeString + ' ' + userTimezone);
+      
+      // Convert to device timezone
+      const deviceTimezone = this.getDeviceTimezone();
+      const deviceDate = new Date(userDateTime.toLocaleString('en-US', { timeZone: deviceTimezone }));
+      
+      return {
+        hours: deviceDate.getHours(),
+        minutes: deviceDate.getMinutes()
+      };
+    } catch (error) {
+      console.error('Error converting timezone:', error);
+      // Fallback to original time
+      return { hours, minutes };
+    }
+  }
+
+  /**
    * Initialize notification service
    */
   async initialize(): Promise<void> {
@@ -240,13 +267,17 @@ class NotificationService {
 
       // Parse digest time
       const [hours, minutes] = preferences.digestTime.split(':').map(Number);
-      console.log(`Parsed time: ${hours}:${minutes}`);
+      console.log(`Parsed time: ${hours}:${minutes} in timezone: ${preferences.timezone}`);
+      
+      // Convert time to user's timezone
+      const userTime = this.convertTimeToUserTimezone(hours, minutes, preferences.timezone);
+      console.log(`Converted to user timezone: ${userTime.hours}:${userTime.minutes}`);
       
       // Create notification trigger for daily scheduling
       const trigger = {
         type: 'daily',
-        hour: hours,
-        minute: minutes,
+        hour: userTime.hours,
+        minute: userTime.minutes,
         repeats: true,
       } as Notifications.NotificationTriggerInput;
 

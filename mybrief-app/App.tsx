@@ -24,7 +24,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
-  const [forceRefresh, setForceRefresh] = useState(0);
+  const [authChecked, setAuthChecked] = useState(false);
   const navigationRef = useRef<NavigationContainerRef<any>>(null);
 
   const refreshUserData = async () => {
@@ -71,18 +71,12 @@ export default function App() {
         notificationService.initialize();
 
         // Check authentication state
-        supabase.auth.getSession().then(({ data: { session } }) => {
+        supabase.auth.getSession().then(async ({ data: { session } }) => {
           setUser(session?.user ?? null);
-          setLoading(false);
-        });
-
-        // Listen for auth changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(
-          async (event, session) => {
-            setUser(session?.user ?? null);
-            
-            if (session?.user) {
-              // Check if onboarding is completed
+          
+          if (session?.user) {
+            // Check if onboarding is completed
+            try {
               const { data: userData } = await supabase
                 .from('users')
                 .select('onboarding_completed')
@@ -90,22 +84,44 @@ export default function App() {
                 .single();
               
               setOnboardingCompleted(userData?.onboarding_completed ?? false);
-              
-              // If onboarding was just completed, force a re-check after a short delay
-              if (userData?.onboarding_completed && !onboardingCompleted) {
-                setTimeout(async () => {
-                  const { data: refreshedUserData } = await supabase
-                    .from('users')
-                    .select('onboarding_completed')
-                    .eq('id', session.user.id)
-                    .single();
-                  setOnboardingCompleted(refreshedUserData?.onboarding_completed ?? false);
-                }, 500);
+            } catch (error) {
+              console.error('Error checking onboarding status:', error);
+              setOnboardingCompleted(false);
+            }
+          } else {
+            setOnboardingCompleted(false);
+          }
+          
+          setAuthChecked(true);
+          setLoading(false);
+        });
+
+        // Listen for auth changes
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+          async (event, session) => {
+            console.log('Auth state changed:', event, session?.user?.email);
+            
+            setUser(session?.user ?? null);
+            
+            if (session?.user) {
+              // Check if onboarding is completed
+              try {
+                const { data: userData } = await supabase
+                  .from('users')
+                  .select('onboarding_completed')
+                  .eq('id', session.user.id)
+                  .single();
+                
+                setOnboardingCompleted(userData?.onboarding_completed ?? false);
+              } catch (error) {
+                console.error('Error checking onboarding status:', error);
+                setOnboardingCompleted(false);
               }
             } else {
               setOnboardingCompleted(false);
             }
             
+            setAuthChecked(true);
             setLoading(false);
           }
         );
@@ -123,7 +139,7 @@ export default function App() {
     initializeApp();
   }, []);
 
-  if (loading) {
+  if (loading || !authChecked) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.background }}>
         <ActivityIndicator size="large" color={theme.accent} />
@@ -137,22 +153,21 @@ export default function App() {
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
-          // Smooth fade transition
-          animation: 'fade',
-          animationDuration: 300,
-          // Alternative: Slide from bottom (more modern)
-          // animation: 'slide_from_bottom',
-          // animationDuration: 250,
-          // Alternative: Card style (iOS-like)
-          // presentation: 'card',
-          // animation: 'default',
-          // animationDuration: 300,
+          // Smooth slide transition
+          animation: 'slide_from_right',
+          animationDuration: 250,
+          gestureEnabled: true,
+          gestureDirection: 'horizontal',
         }}
       >
         {!user ? (
           <Stack.Screen name="SignIn" component={SignInScreen} />
         ) : !onboardingCompleted ? (
-          <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+          <Stack.Screen 
+            name="Onboarding" 
+            component={OnboardingScreen}
+            initialParams={{ onOnboardingComplete: refreshUserData }}
+          />
         ) : (
           <>
             <Stack.Screen name="Home" component={DigestScreen} />
