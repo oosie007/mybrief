@@ -17,6 +17,7 @@ import { supabase } from '../lib/supabase';
 import { LoadingState, ErrorState, NoFeedsState, SkeletonFeedCard } from '../components/UIStates';
 import { getFeedSourceFavicon } from '../lib/faviconService';
 import { categorizeFeed, updateFeedCategory, FEED_CATEGORIES } from '../lib/feedCategorizer';
+import SharedLayout from '../components/SharedLayout';
 
 const FEED_TYPES = [
   { 
@@ -47,6 +48,151 @@ const FEED_TYPES = [
     examples: ['https://reddit.com/r/technology', 'https://reddit.com/r/programming', 'https://reddit.com/r/startups']
   },
 ];
+
+const AddFeedScreen = ({
+  selectedFeedType,
+  setSelectedFeedType,
+  newFeedUrl,
+  setNewFeedUrl,
+  newFeedName,
+  setNewFeedName,
+  handleAddFeed,
+  getSourceColor,
+  theme,
+}: {
+  selectedFeedType: string | null;
+  setSelectedFeedType: (type: string) => void;
+  newFeedUrl: string;
+  setNewFeedUrl: (url: string) => void;
+  newFeedName: string;
+  setNewFeedName: (name: string) => void;
+  handleAddFeed: () => void;
+  getSourceColor: (type: string) => string;
+  theme: any;
+}) => {
+  const selectedFeedTypeData = FEED_TYPES.find(t => t.type === selectedFeedType);
+  
+  return (
+    <View style={styles.screen}>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Feed Type Selection */}
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+            Choose Feed Type
+          </Text>
+        </View>
+        
+        <View style={[styles.section, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+          {FEED_TYPES.map((feedType) => (
+            <TouchableOpacity
+              key={feedType.type}
+              style={[
+                styles.feedTypeItem,
+                { borderColor: theme.border },
+                selectedFeedType === feedType.type && { borderColor: theme.accent, borderWidth: 2 }
+              ]}
+              onPress={() => setSelectedFeedType(feedType.type)}
+            >
+              <View style={styles.feedTypeContent}>
+                <View style={[
+                  styles.feedTypeIcon,
+                  { backgroundColor: getSourceColor(feedType.type) }
+                ]}>
+                  <Ionicons name={feedType.icon as any} size={20} color="white" />
+                </View>
+                <View style={styles.feedTypeText}>
+                  <Text style={[styles.feedTypeLabel, { color: theme.text }]}>
+                    {feedType.label}
+                  </Text>
+                  <Text style={[styles.feedTypeDescription, { color: theme.textSecondary }]}>
+                    {feedType.description}
+                  </Text>
+                </View>
+              </View>
+              {selectedFeedType === feedType.type && (
+                <Ionicons name="checkmark-circle" size={24} color={theme.accent} />
+              )}
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Feed Details Form */}
+        {selectedFeedType && (
+          <>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+                Feed Details
+              </Text>
+            </View>
+            
+            <View style={[styles.section, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+              <View style={[styles.formGroup, { borderTopColor: theme.border }]}>
+                <Text style={[styles.formLabel, { color: theme.text }]}>Feed URL</Text>
+                <TextInput
+                  style={[styles.formInput, { 
+                    backgroundColor: theme.background, 
+                    borderColor: theme.border,
+                    color: theme.text 
+                  }]}
+                  value={newFeedUrl}
+                  onChangeText={setNewFeedUrl}
+                  placeholder={selectedFeedTypeData?.placeholder}
+                  placeholderTextColor={theme.textMuted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                />
+              </View>
+
+              <View style={[styles.formGroup, { borderTopColor: theme.border }]}>
+                <Text style={[styles.formLabel, { color: theme.text }]}>Feed Name (Optional)</Text>
+                <TextInput
+                  style={[styles.formInput, { 
+                    backgroundColor: theme.background, 
+                    borderColor: theme.border,
+                    color: theme.text 
+                  }]}
+                  value={newFeedName}
+                  onChangeText={setNewFeedName}
+                  placeholder="Leave empty to auto-generate from URL"
+                  placeholderTextColor={theme.textMuted}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                />
+              </View>
+
+              {/* Examples */}
+              <View style={[styles.examplesContainer, { borderTopColor: theme.border }]}>
+                <Text style={[styles.examplesTitle, { color: theme.textSecondary }]}>Examples:</Text>
+                {selectedFeedTypeData?.examples.map((example, index) => (
+                  <Text key={index} style={[styles.example, { color: theme.textMuted }]}>
+                    • {example}
+                  </Text>
+                ))}
+              </View>
+
+              <View style={[styles.formGroup, { borderTopColor: theme.border }]}>
+                <TouchableOpacity
+                  style={[
+                    styles.formButton,
+                    { backgroundColor: theme.accent },
+                    (!newFeedUrl.trim()) && { opacity: 0.5 }
+                  ]}
+                  onPress={handleAddFeed}
+                  disabled={!newFeedUrl.trim()}
+                >
+                  <Text style={[styles.formButtonText, { color: theme.accentText }]}>
+                    Add Feed
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        )}
+      </ScrollView>
+    </View>
+  );
+};
 
 const FeedManagementScreen = ({ navigation }: any) => {
   const { theme, isDarkMode } = useTheme();
@@ -101,7 +247,8 @@ const FeedManagementScreen = ({ navigation }: any) => {
           return urlObj.hostname.replace('www.', '').split('.')[0];
       }
     } catch (error) {
-      console.error('Error parsing URL:', error);
+      // Don't log errors during typing - only when actually adding
+      return '';
     }
     
     return '';
@@ -150,25 +297,25 @@ const FeedManagementScreen = ({ navigation }: any) => {
     }
   };
 
-  // Update feed name when URL changes
-  useEffect(() => {
-    if (selectedFeedType && newFeedUrl) {
-      if (selectedFeedType === 'youtube') {
-        // For YouTube, try to fetch the real channel name
-        fetchYouTubeChannelName(newFeedUrl).then(name => {
-          if (name) {
-            setNewFeedName(name);
-          }
-        });
-      } else {
-        // For other types, use URL parsing
-        const extractedName = extractFeedNameFromUrl(newFeedUrl, selectedFeedType);
-        if (extractedName) {
-          setNewFeedName(extractedName);
-        }
-      }
-    }
-  }, [newFeedUrl, selectedFeedType]);
+  // Update feed name when URL changes - REMOVED automatic validation
+  // useEffect(() => {
+  //   if (selectedFeedType && newFeedUrl) {
+  //     if (selectedFeedType === 'youtube') {
+  //       // For YouTube, try to fetch the real channel name
+  //       fetchYouTubeChannelName(newFeedUrl).then(name => {
+  //         if (name) {
+  //           setNewFeedName(name);
+  //         }
+  //       });
+  //     } else {
+  //       // For other types, use URL parsing
+  //       const extractedName = extractFeedNameFromUrl(newFeedUrl, selectedFeedType);
+  //       if (extractedName) {
+  //         setNewFeedName(extractedName);
+  //       }
+  //     }
+  //   }
+  // }, [newFeedUrl, selectedFeedType]);
 
   useEffect(() => {
     fetchFeeds();
@@ -231,22 +378,25 @@ const FeedManagementScreen = ({ navigation }: any) => {
         return;
       }
 
-      // Get the proper feed name based on type
+      // Get the proper feed name based on type - ONLY when user clicks Add
       let feedName = newFeedName.trim();
-      if (selectedFeedType === 'youtube') {
-        // For YouTube, get the real channel name
-        feedName = await fetchYouTubeChannelName(newFeedUrl);
-        if (!feedName) {
-          // Fallback to URL parsing
+      if (!feedName) {
+        // Only extract name if user hasn't provided one
+        if (selectedFeedType === 'youtube') {
+          // For YouTube, get the real channel name
+          feedName = await fetchYouTubeChannelName(newFeedUrl);
+          if (!feedName) {
+            // Fallback to URL parsing
+            feedName = extractFeedNameFromUrl(newFeedUrl, selectedFeedType);
+          }
+        } else {
+          // For other types, use URL parsing
           feedName = extractFeedNameFromUrl(newFeedUrl, selectedFeedType);
         }
-      } else {
-        // For other types, use URL parsing
-        feedName = extractFeedNameFromUrl(newFeedUrl, selectedFeedType);
       }
 
       if (!feedName) {
-        Alert.alert('Error', 'Could not extract feed name from URL');
+        Alert.alert('Error', 'Could not extract feed name from URL. Please provide a name manually.');
         return;
       }
 
@@ -376,32 +526,45 @@ const FeedManagementScreen = ({ navigation }: any) => {
   };
 
   const handleRemoveFeed = async (userFeedId: string) => {
+    try {
+      const { error } = await supabase
+        .from('user_feeds')
+        .delete()
+        .eq('id', userFeedId);
+
+      if (error) {
+        console.error('Error removing feed:', error);
+        Alert.alert('Error', 'Failed to remove feed');
+        return;
+      }
+
+      // Refresh feeds list
+      await fetchFeeds();
+      Alert.alert('Success', 'Feed removed successfully');
+    } catch (error) {
+      console.error('Error removing feed:', error);
+      Alert.alert('Error', 'Failed to remove feed');
+    }
+  };
+
+  const handleDeleteFeed = async () => {
+    if (!editingFeed) return;
+    
     Alert.alert(
-      'Remove Feed',
-      'Are you sure you want to remove this feed?',
+      'Delete Feed',
+      `Are you sure you want to delete "${editingFeed.feed_sources?.name}"? This action cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
+        { 
+          text: 'Delete', 
           style: 'destructive',
           onPress: async () => {
             try {
-              const { error } = await supabase
-                .from('user_feeds')
-                .delete()
-                .eq('id', userFeedId);
-
-              if (error) {
-                console.error('Error removing feed:', error);
-                Alert.alert('Error', 'Failed to remove feed');
-                return;
-              }
-
-              // Refresh feeds
-              await fetchFeeds();
+              await handleRemoveFeed(editingFeed.id);
+              setShowEditModal(false);
+              setEditingFeed(null);
             } catch (error) {
-              console.error('Error removing feed:', error);
-              Alert.alert('Error', 'Failed to remove feed');
+              console.error('Error deleting feed:', error);
             }
           }
         }
@@ -544,236 +707,101 @@ const FeedManagementScreen = ({ navigation }: any) => {
 
     return (
       <View style={styles.screen}>
-        <View style={styles.screenHeader}>
-          <Text style={[styles.title, { color: theme.text }]}>My Feeds</Text>
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-            {formatFeedCount(feeds)}
-          </Text>
-        </View>
-
-        {feeds.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="add-circle-outline" size={64} color={theme.textMuted} />
-            <Text style={[styles.emptyTitle, { color: theme.text }]}>No feeds yet</Text>
-            <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
-              Add your first feed to get started
-            </Text>
-            <TouchableOpacity
-              style={[styles.addFirstButton, { backgroundColor: theme.accent }]}
-              onPress={() => setActiveTab('add-feed')}
-            >
-              <Text style={[styles.addFirstButtonText, { color: theme.accentText }]}>
-                Add Your First Feed
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          {feeds.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="add-circle-outline" size={64} color={theme.textMuted} />
+              <Text style={[styles.emptyTitle, { color: theme.text }]}>No feeds yet</Text>
+              <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
+                Add your first feed to get started
               </Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <FlatList
-            data={feedTypeSections}
-            keyExtractor={(section) => section.type}
-            renderItem={({ item: section }) => {
-              const sectionFeeds = groupedFeeds[section.type] || [];
-              if (sectionFeeds.length === 0) return null;
+              <TouchableOpacity
+                style={[styles.addFirstButton, { backgroundColor: theme.accent }]}
+                onPress={() => setActiveTab('add-feed')}
+              >
+                <Text style={[styles.addFirstButtonText, { color: theme.accentText }]}>
+                  Add Your First Feed
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              {feedTypeSections.map((section) => {
+                const sectionFeeds = groupedFeeds[section.type] || [];
+                if (sectionFeeds.length === 0) return null;
 
-              return (
-                <View key={section.type}>
-                  {/* Section Header */}
-                  <View style={styles.sectionHeader}>
-                    <View style={styles.sectionHeaderLeft}>
-                      <Ionicons 
-                        name={section.icon as any} 
-                        size={16} 
-                        color={section.color} 
-                      />
-                      <Text style={[styles.sectionTitle, { color: theme.text }]}>
-                        {section.label}
-                      </Text>
-                      <Text style={[styles.sectionCount, { color: theme.textSecondary }]}>
-                        ({sectionFeeds.length})
+                return (
+                  <View key={section.type}>
+                    {/* Section Header */}
+                    <View style={styles.sectionHeader}>
+                      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+                        {section.label} ({sectionFeeds.length})
                       </Text>
                     </View>
-                  </View>
 
-                  {/* Section Feeds */}
-                  {sectionFeeds.map((feed: any) => {
-                    const isFetching = fetchingFeeds.has(feed.feed_sources?.id);
-                    
-                    if (isFetching) {
-                      return <SkeletonFeedCard key={feed.id} theme={theme} />;
-                    }
-                    
-                    return (
-                      <View key={feed.id} style={[styles.feedCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-                        <View style={styles.feedCardHeader}>
-                          <Image
-                            source={{ 
-                              uri: feed.feed_sources?.favicon_url || 
-                                    getSourceIcon(feed.feed_sources?.name || '', feed.feed_sources?.type || '', feed.feed_sources?.url) 
-                            }}
-                            style={styles.feedIcon}
-                          />
-                          <View style={styles.feedInfo}>
-                            <Text style={[styles.feedName, { color: theme.text }]}>
-                              {feed.feed_sources?.name || 'Unknown'}
-                            </Text>
-                            <Text style={[styles.feedUrl, { color: theme.textSecondary }]} numberOfLines={1}>
-                              {feed.feed_sources?.url || ''}
-                            </Text>
-                            <View style={styles.feedTypeContainer}>
-                              <Ionicons 
-                                name={(FEED_TYPES.find(t => t.type === feed.feed_sources?.type)?.icon || 'globe') as any} 
-                                size={12} 
-                                color={getSourceColor(feed.feed_sources?.type || '')} 
+                    {/* Section Feeds */}
+                    <View style={[styles.section, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+                      {sectionFeeds.map((feed: any, index: number) => {
+                        const isFetching = fetchingFeeds.has(feed.feed_sources?.id);
+                        
+                        if (isFetching) {
+                          return <SkeletonFeedCard key={feed.id} theme={theme} />;
+                        }
+                        
+                        return (
+                          <TouchableOpacity
+                            key={feed.id}
+                            style={[
+                              styles.feedItem,
+                              { borderBottomColor: theme.border },
+                              index < sectionFeeds.length - 1 && { borderBottomWidth: 1 }
+                            ]}
+                            onPress={() => openEditModal(feed)}
+                          >
+                            <View style={styles.feedItemContent}>
+                              <Image
+                                source={{ 
+                                  uri: feed.feed_sources?.favicon_url || 
+                                        getSourceIcon(feed.feed_sources?.name || '', feed.feed_sources?.type || '', feed.feed_sources?.url) 
+                                }}
+                                style={styles.feedIcon}
                               />
-                              <Text style={[styles.feedType, { color: getSourceColor(feed.feed_sources?.type || '') }]}>
-                                {FEED_TYPES.find(t => t.type === feed.feed_sources?.type)?.label || 'Unknown'}
-                              </Text>
-                            </View>
-                            {feed.feed_sources?.category && (
-                              <View style={styles.categoryContainer}>
-                                <Text style={[styles.categoryText, { color: theme.textSecondary }]}>
-                                  Category: {feed.feed_sources.category}
+                              <View style={styles.feedInfo}>
+                                <Text style={[styles.feedName, { color: theme.text }]}>
+                                  {feed.feed_sources?.name || 'Unknown'}
                                 </Text>
+                                <Text style={[styles.feedUrl, { color: theme.textSecondary }]} numberOfLines={1}>
+                                  {feed.feed_sources?.url || ''}
+                                </Text>
+                                {feed.feed_sources?.category && (
+                                  <View style={styles.categoryContainer}>
+                                    <Text style={[styles.categoryText, { color: theme.textSecondary }]}>
+                                      {feed.feed_sources.category}
+                                    </Text>
+                                  </View>
+                                )}
                               </View>
-                            )}
-                          </View>
-                          <View style={styles.feedActions}>
-                            <TouchableOpacity
-                              style={styles.editButton}
-                              onPress={() => openEditModal(feed)}
-                            >
-                              <Ionicons name="create-outline" size={18} color={theme.textMuted} />
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              style={styles.removeButton}
-                              onPress={() => handleRemoveFeed(feed.id)}
-                            >
-                              <Ionicons name="trash-outline" size={20} color={theme.textMuted} />
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              );
-            }}
-            contentContainerStyle={styles.feedsList}
-            showsVerticalScrollIndicator={false}
-          />
-        )}
+                            </View>
+                            <View style={styles.feedItemRight}>
+                              <Ionicons 
+                                name="chevron-forward" 
+                                size={16} 
+                                color={theme.textMuted} 
+                              />
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                );
+              })}
+            </>
+          )}
+        </ScrollView>
       </View>
     );
   };
-
-  const AddFeedScreen = () => (
-    <View style={styles.screen}>
-      <View style={styles.screenHeader}>
-        <Text style={[styles.title, { color: theme.text }]}>Add New Feed</Text>
-        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-          Choose the type of feed you want to add
-        </Text>
-      </View>
-
-      <ScrollView style={styles.addFeedContainer} showsVerticalScrollIndicator={false}>
-        {/* Feed Type Selection */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Feed Type</Text>
-          <View style={styles.feedTypeList}>
-            {FEED_TYPES.map((feedType) => (
-              <TouchableOpacity
-                key={feedType.type}
-                style={[
-                  styles.feedTypeItem,
-                  { backgroundColor: theme.cardBg, borderColor: theme.border },
-                  selectedFeedType === feedType.type && { borderColor: theme.accent }
-                ]}
-                onPress={() => setSelectedFeedType(feedType.type)}
-              >
-                <View style={styles.feedTypeContent}>
-                  <View style={[
-                    styles.feedTypeIcon,
-                    { backgroundColor: feedType.iconColor }
-                  ]}>
-                    <Ionicons 
-                      name={feedType.icon as any} 
-                      size={20} 
-                      color="white" 
-                    />
-                  </View>
-                  <View style={styles.feedTypeText}>
-                    <Text style={[
-                      styles.feedTypeLabel, 
-                      { color: selectedFeedType === feedType.type ? theme.accent : theme.text }
-                    ]}>
-                      {feedType.label}
-                    </Text>
-                    <Text style={[styles.feedTypeDescription, { color: theme.textSecondary }]}>
-                      {feedType.description}
-                    </Text>
-                  </View>
-                </View>
-                {selectedFeedType === feedType.type && (
-                  <Ionicons name="checkmark-circle" size={24} color={theme.accent} />
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* Feed Details Form */}
-        {selectedFeedType && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Feed Details</Text>
-            
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: theme.text }]}>Feed URL</Text>
-              <TextInput
-                style={[styles.textInput, { 
-                  backgroundColor: theme.cardBg, 
-                  borderColor: theme.border,
-                  color: theme.text 
-                }]}
-                value={newFeedUrl}
-                onChangeText={setNewFeedUrl}
-                placeholder={FEED_TYPES.find(t => t.type === selectedFeedType)?.placeholder}
-                placeholderTextColor={theme.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
-
-            {/* Examples */}
-            <View style={styles.examplesContainer}>
-              <Text style={[styles.examplesTitle, { color: theme.textSecondary }]}>Examples:</Text>
-              {FEED_TYPES.find(t => t.type === selectedFeedType)?.examples.map((example, index) => (
-                <Text key={index} style={[styles.example, { color: theme.textMuted }]}>
-                  • {example}
-                </Text>
-              ))}
-            </View>
-
-            <TouchableOpacity
-              style={[
-                styles.addButton,
-                { backgroundColor: theme.accent },
-                (!newFeedName.trim() || !newFeedUrl.trim()) && { opacity: 0.5 }
-              ]}
-              onPress={handleAddFeed}
-              disabled={!newFeedName.trim() || !newFeedUrl.trim()}
-            >
-              <>
-                <Ionicons name="add" size={20} color={theme.accentText} />
-                <Text style={[styles.addButtonText, { color: theme.accentText }]}>
-                  Add Feed
-                </Text>
-              </>
-            </TouchableOpacity>
-          </View>
-        )}
-      </ScrollView>
-    </View>
-  );
 
   if (loading) {
     return <LoadingState message="Loading feeds..." />;
@@ -790,22 +818,20 @@ const FeedManagementScreen = ({ navigation }: any) => {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.headerBg, borderBottomColor: theme.border }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color={theme.text} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Feed Management</Text>
-        <View style={{ width: 24 }} />
-      </View>
-
+    <SharedLayout
+      navigation={navigation}
+      currentScreen="feeds"
+      searchQuery={searchQuery}
+      onSearchChange={setSearchQuery}
+      searchPlaceholder="Search feeds..."
+      showFilters={false}
+    >
       {/* Tab Navigation */}
-      <View style={[styles.tabContainer, { backgroundColor: theme.headerBg, borderBottomColor: theme.border }]}>
+      <View style={[styles.tabContainer, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
         <TouchableOpacity
           style={[
             styles.tab,
-            activeTab === 'my-feeds' && { borderBottomColor: theme.accent }
+            activeTab === 'my-feeds' && { borderBottomColor: theme.accent, borderBottomWidth: 2 }
           ]}
           onPress={() => setActiveTab('my-feeds')}
         >
@@ -819,7 +845,7 @@ const FeedManagementScreen = ({ navigation }: any) => {
         <TouchableOpacity
           style={[
             styles.tab,
-            activeTab === 'add-feed' && { borderBottomColor: theme.accent }
+            activeTab === 'add-feed' && { borderBottomColor: theme.accent, borderBottomWidth: 2 }
           ]}
           onPress={() => setActiveTab('add-feed')}
         >
@@ -833,7 +859,17 @@ const FeedManagementScreen = ({ navigation }: any) => {
       </View>
 
       {/* Content */}
-      {activeTab === 'my-feeds' ? <MyFeedsScreen /> : <AddFeedScreen />}
+      {activeTab === 'my-feeds' ? <MyFeedsScreen /> : <AddFeedScreen
+        selectedFeedType={selectedFeedType}
+        setSelectedFeedType={setSelectedFeedType}
+        newFeedUrl={newFeedUrl}
+        setNewFeedUrl={setNewFeedUrl}
+        newFeedName={newFeedName}
+        setNewFeedName={setNewFeedName}
+        handleAddFeed={handleAddFeed}
+        getSourceColor={getSourceColor}
+        theme={theme}
+      />}
 
       {/* Edit Feed Modal */}
       {showEditModal && (
@@ -847,21 +883,31 @@ const FeedManagementScreen = ({ navigation }: any) => {
             </View>
 
             <View style={styles.modalBody}>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: theme.text }]}>Feed Name</Text>
+              <View style={[styles.formGroup, { borderTopColor: theme.border }]}>
+                <Text style={[styles.formLabel, { color: theme.text }]}>Feed Name</Text>
                 <TextInput
-                  style={[styles.textInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
+                  style={[styles.formInput, { 
+                    backgroundColor: theme.background, 
+                    borderColor: theme.border,
+                    color: theme.text 
+                  }]}
                   value={editFeedName}
                   onChangeText={setEditFeedName}
                   placeholder="Enter feed name"
                   placeholderTextColor={theme.textMuted}
+                  autoCapitalize="words"
+                  autoCorrect={false}
                 />
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: theme.text }]}>Feed URL</Text>
+              <View style={[styles.formGroup, { borderTopColor: theme.border }]}>
+                <Text style={[styles.formLabel, { color: theme.text }]}>Feed URL</Text>
                 <TextInput
-                  style={[styles.textInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
+                  style={[styles.formInput, { 
+                    backgroundColor: theme.background, 
+                    borderColor: theme.border,
+                    color: theme.text 
+                  }]}
                   value={editFeedUrl}
                   onChangeText={setEditFeedUrl}
                   placeholder="Enter feed URL"
@@ -870,43 +916,52 @@ const FeedManagementScreen = ({ navigation }: any) => {
                   autoCorrect={false}
                   keyboardType="url"
                 />
-                <Text style={[styles.inputNote, { color: theme.textMuted }]}>
+                <Text style={[styles.formHelpText, { color: theme.textMuted }]}>
                   Changing the URL will affect content fetching
                 </Text>
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: theme.text }]}>Category</Text>
-                <View style={[styles.dropdownContainer, { backgroundColor: theme.background, borderColor: theme.border }]}>
-                  <TouchableOpacity
-                    style={styles.dropdownButton}
-                    onPress={() => {
-                      // Simple dropdown implementation - in a real app you'd use a proper dropdown library
-                      Alert.alert(
-                        'Select Category',
-                        'Choose a category',
-                        [
-                          ...FEED_CATEGORIES.map(category => ({
-                            text: category,
-                            onPress: () => setEditFeedCategory(category)
-                          })),
-                          { text: 'Cancel', style: 'cancel' as const }
-                        ]
-                      );
-                    }}
-                  >
-                    <Text style={[styles.dropdownText, { color: theme.text }]}>
-                      {editFeedCategory || 'Select category'}
-                    </Text>
-                    <Ionicons name="chevron-down" size={16} color={theme.textMuted} />
-                  </TouchableOpacity>
-                </View>
+              <View style={[styles.formGroup, { borderTopColor: theme.border }]}>
+                <Text style={[styles.formLabel, { color: theme.text }]}>Category</Text>
+                <TouchableOpacity
+                  style={[styles.formInput, { 
+                    backgroundColor: theme.background, 
+                    borderColor: theme.border,
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }]}
+                  onPress={() => {
+                    Alert.alert(
+                      'Select Category',
+                      'Choose a category',
+                      [
+                        ...FEED_CATEGORIES.map(category => ({
+                          text: category,
+                          onPress: () => setEditFeedCategory(category)
+                        })),
+                        { text: 'Cancel', style: 'cancel' as const }
+                      ]
+                    );
+                  }}
+                >
+                  <Text style={[styles.formInputText, { color: editFeedCategory ? theme.text : theme.textMuted }]}>
+                    {editFeedCategory || 'Select a category'}
+                  </Text>
+                  <Ionicons name="chevron-down" size={16} color={theme.textMuted} />
+                </TouchableOpacity>
               </View>
             </View>
 
             <View style={styles.modalFooter}>
               <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: theme.background, borderColor: theme.border }]}
+                style={[styles.modalButton, { backgroundColor: '#ef4444' }]}
+                onPress={handleDeleteFeed}
+              >
+                <Text style={[styles.modalButtonText, { color: 'white' }]}>Delete</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: theme.border }]}
                 onPress={() => setShowEditModal(false)}
               >
                 <Text style={[styles.modalButtonText, { color: theme.text }]}>Cancel</Text>
@@ -921,38 +976,7 @@ const FeedManagementScreen = ({ navigation }: any) => {
           </View>
         </View>
       )}
-
-      {/* Bottom Navigation */}
-      <View style={[styles.bottomNav, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
-        <TouchableOpacity 
-          style={styles.navButton}
-          onPress={() => navigation.navigate('Home')}
-        >
-          <Ionicons name="home-outline" size={24} color={theme.textSecondary} />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.navButton, { backgroundColor: theme.hover }]}
-          onPress={() => navigation.navigate('FeedManagement')}
-        >
-          <Ionicons name="list-outline" size={24} color={theme.accent} />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navButton}
-          onPress={() => navigation.navigate('SavedArticles')}
-        >
-          <Ionicons name="heart-outline" size={24} color={theme.textSecondary} />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navButton}
-          onPress={() => navigation.navigate('Settings')}
-        >
-          <Ionicons name="settings-outline" size={24} color={theme.textSecondary} />
-        </TouchableOpacity>
-      </View>
-    </View>
+    </SharedLayout>
   );
 };
 
@@ -969,6 +993,41 @@ const styles = StyleSheet.create({
     paddingTop: 50,
     borderBottomWidth: 1,
   },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+  },
+  logoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  logo: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  logoInner: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+  },
+  appTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerButton: {
+    padding: 8,
+    borderRadius: 6,
+  },
   backButton: {
     padding: 8,
     borderRadius: 6,
@@ -980,26 +1039,26 @@ const styles = StyleSheet.create({
   headerSpacer: {
     width: 40,
   },
+  screen: {
+    flex: 1,
+  },
   tabContainer: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    paddingBottom: 10,
-    paddingTop: 10,
+    borderRadius: 8,
+    marginHorizontal: 16,
+    marginBottom: 16,
   },
   tab: {
     flex: 1,
+    paddingVertical: 16,
     alignItems: 'center',
-    paddingVertical: 8,
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
   },
   tabText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  screen: {
-    flex: 1,
-    paddingHorizontal: 16,
+    fontSize: 16,
+    fontWeight: '600',
   },
   screenHeader: {
     flexDirection: 'row',
@@ -1066,12 +1125,11 @@ const styles = StyleSheet.create({
   },
   feedName: {
     fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 2,
+    fontWeight: '500',
   },
   feedUrl: {
-    fontSize: 12,
-    marginBottom: 4,
+    fontSize: 14,
+    marginTop: 2,
   },
   feedTypeContainer: {
     flexDirection: 'row',
@@ -1087,10 +1145,6 @@ const styles = StyleSheet.create({
   },
   categoryContainer: {
     marginTop: 4,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 6,
   },
   categoryText: {
     fontSize: 12,
@@ -1105,19 +1159,14 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   sectionHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  sectionHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    marginTop: 24,
+    marginBottom: 8,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    marginLeft: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   sectionCount: {
     fontSize: 14,
@@ -1127,26 +1176,32 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   section: {
-    marginBottom: 24,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
   inputGroup: {
-    marginBottom: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
   },
   inputLabel: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
     marginBottom: 8,
   },
   textInput: {
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 6,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
     fontSize: 16,
+    marginBottom: 8,
   },
   examplesContainer: {
-    marginTop: 12,
-    marginBottom: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
   },
   examplesTitle: {
     fontSize: 14,
@@ -1156,18 +1211,17 @@ const styles = StyleSheet.create({
   example: {
     fontSize: 12,
     marginBottom: 4,
+    marginLeft: 12,
   },
   addButton: {
-    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
   },
   addButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '500',
   },
   feedTypeGrid: {
     flexDirection: 'row',
@@ -1190,11 +1244,11 @@ const styles = StyleSheet.create({
   feedTypeItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderWidth: 1,
+    borderRadius: 8,
+    marginBottom: 8,
   },
   feedTypeContent: {
     flexDirection: 'row',
@@ -1224,12 +1278,11 @@ const styles = StyleSheet.create({
   },
   feedTypeLabel: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '500',
     marginBottom: 4,
   },
   feedTypeDescription: {
     fontSize: 14,
-    color: '#666',
   },
   bottomNav: {
     flexDirection: 'row',
@@ -1265,27 +1318,34 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     width: '90%',
-    borderRadius: 16,
-    padding: 24,
+    maxWidth: 400,
+    borderRadius: 12,
+    padding: 0,
     borderWidth: 1,
+    overflow: 'hidden',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '600',
   },
   modalBody: {
-    marginBottom: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
   },
   modalFooter: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    gap: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    gap: 12,
   },
   modalButton: {
     flex: 1,
@@ -1294,31 +1354,67 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  dropdownContainer: {
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  dropdownButton: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  dropdownText: {
     fontSize: 14,
-    flex: 1,
+    fontWeight: '600',
   },
   inputNote: {
     marginTop: 4,
     fontSize: 12,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  formGroup: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+  },
+  formLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  formInput: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 16,
+    marginBottom: 8,
+  },
+  formButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  formButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  feedItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  feedItemContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  feedItemRight: {
+    marginLeft: 8,
+  },
+  formHelpText: {
+    marginTop: 4,
+    fontSize: 12,
+  },
+  formInputText: {
+    fontSize: 14,
+    flex: 1,
   },
 });
 

@@ -58,25 +58,49 @@ export const darkTheme: Theme = {
   divider: '#4b5563', // gray-600
 };
 
+// Global theme state
+let globalIsDarkMode = false;
+let globalTheme = lightTheme;
+let themeListeners: Array<() => void> = [];
+
 export function useTheme() {
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(globalIsDarkMode);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     loadThemePreference();
+    
+    // Add listener for theme changes
+    const listener = () => {
+      setIsDarkMode(globalIsDarkMode);
+    };
+    themeListeners.push(listener);
+    
+    return () => {
+      const index = themeListeners.indexOf(listener);
+      if (index > -1) {
+        themeListeners.splice(index, 1);
+      }
+    };
   }, []);
 
   const loadThemePreference = async () => {
     try {
       const savedTheme = await AsyncStorage.getItem('theme');
       if (savedTheme) {
-        setIsDarkMode(savedTheme === 'dark');
+        globalIsDarkMode = savedTheme === 'dark';
+        globalTheme = globalIsDarkMode ? darkTheme : lightTheme;
+        setIsDarkMode(globalIsDarkMode);
       } else {
         // Default to system preference or light mode
+        globalIsDarkMode = false;
+        globalTheme = lightTheme;
         setIsDarkMode(false);
       }
     } catch (error) {
       console.error('Error loading theme preference:', error);
+      globalIsDarkMode = false;
+      globalTheme = lightTheme;
       setIsDarkMode(false);
     } finally {
       setIsLoading(false);
@@ -84,8 +108,14 @@ export function useTheme() {
   };
 
   const toggleTheme = async () => {
-    const newTheme = !isDarkMode;
+    const newTheme = !globalIsDarkMode;
+    globalIsDarkMode = newTheme;
+    globalTheme = newTheme ? darkTheme : lightTheme;
     setIsDarkMode(newTheme);
+    
+    // Notify all listeners
+    themeListeners.forEach(listener => listener());
+    
     try {
       await AsyncStorage.setItem('theme', newTheme ? 'dark' : 'light');
     } catch (error) {
@@ -93,7 +123,7 @@ export function useTheme() {
     }
   };
 
-  const theme = isDarkMode ? darkTheme : lightTheme;
+  const theme = globalTheme;
 
   return {
     theme,

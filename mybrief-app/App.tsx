@@ -137,6 +137,16 @@ export default function App() {
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
+          // Smooth fade transition
+          animation: 'fade',
+          animationDuration: 300,
+          // Alternative: Slide from bottom (more modern)
+          // animation: 'slide_from_bottom',
+          // animationDuration: 250,
+          // Alternative: Card style (iOS-like)
+          // presentation: 'card',
+          // animation: 'default',
+          // animationDuration: 300,
         }}
       >
         {!user ? (

@@ -232,8 +232,8 @@ const NotificationSettings: React.FC<NotificationSettingsProps> = ({ onPreferenc
             <Switch
               value={preferences.enabled}
               onValueChange={(value) => updatePreference('enabled', value)}
-              trackColor={{ false: theme.border, true: theme.accent }}
-              thumbColor={theme.background}
+              trackColor={{ false: '#6b7280', true: '#3b82f6' }}
+              thumbColor={preferences.enabled ? '#ffffff' : '#ffffff'}
               disabled={!permissionsGranted}
             />
           }
@@ -247,8 +247,8 @@ const NotificationSettings: React.FC<NotificationSettingsProps> = ({ onPreferenc
             <Switch
               value={preferences.dailyDigest}
               onValueChange={(value) => updatePreference('dailyDigest', value)}
-              trackColor={{ false: theme.border, true: theme.accent }}
-              thumbColor={theme.background}
+              trackColor={{ false: '#6b7280', true: '#3b82f6' }}
+              thumbColor={preferences.dailyDigest ? '#ffffff' : '#ffffff'}
               disabled={!permissionsGranted || !preferences.enabled}
             />
           }

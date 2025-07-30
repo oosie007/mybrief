@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Modal,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
@@ -69,108 +70,127 @@ const ArticleViewer: React.FC<ArticleViewerProps> = ({
   };
 
   return (
-    <View style={styles.fullscreenOverlay}>
-      {/* Top Bar */}
-      <View style={[styles.header, { backgroundColor: theme.headerBg, borderBottomColor: theme.border }]}>
-        <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-          <Ionicons name="close" size={24} color={theme.text} />
-        </TouchableOpacity>
-        <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>
-          {title}
-        </Text>
-        <View style={styles.headerActions}>
-          {onSave && (
-            <TouchableOpacity style={styles.actionButton} onPress={handleSave}>
-              <Ionicons 
-                name={isSaved ? "heart" : "heart-outline"} 
-                size={24} 
-                color={isSaved ? theme.accent : theme.text} 
-              />
-            </TouchableOpacity>
-          )}
-          {onShare && (
-            <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
-              <Ionicons name="share-outline" size={24} color={theme.text} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {/* Progress Bar */}
-      {loading && (
-        <View style={styles.progressContainer}>
-          <View style={[styles.progressBar, { backgroundColor: theme.border }]}>
-            <View 
-              style={[
-                styles.progressFill, 
-                { 
-                  backgroundColor: theme.accent,
-                  width: `${progress}%`
-                }
-              ]} 
-            />
+    <Modal
+      animationType="slide"
+      transparent={false}
+      visible={true}
+      onRequestClose={onClose}
+      presentationStyle="fullScreen"
+      statusBarTranslucent={true}
+      hardwareAccelerated={true}
+    >
+      <View style={styles.fullscreenOverlay}>
+        {/* Top Bar */}
+        <View style={[styles.header, { backgroundColor: theme.headerBg, borderBottomColor: theme.border }]}>
+          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+            <Ionicons name="close" size={24} color={theme.text} />
+          </TouchableOpacity>
+          <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>
+            {title}
+          </Text>
+          <View style={styles.headerActions}>
+            {onSave && (
+              <TouchableOpacity style={styles.actionButton} onPress={handleSave}>
+                <Ionicons 
+                  name={isSaved ? "heart" : "heart-outline"} 
+                  size={24} 
+                  color={isSaved ? theme.accent : theme.text} 
+                />
+              </TouchableOpacity>
+            )}
+            {onShare && (
+              <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
+                <Ionicons name="share-outline" size={24} color={theme.text} />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
-      )}
 
-      {/* Error State */}
-      {error && (
-        <View style={styles.errorContainer}>
-          <Ionicons name="warning" size={48} color={theme.textMuted} />
-          <Text style={[styles.errorTitle, { color: theme.text }]}>Failed to Load Article</Text>
-          <Text style={[styles.errorMessage, { color: theme.textSecondary }]}>{error}</Text>
-          <TouchableOpacity
-            style={[styles.retryButton, { backgroundColor: theme.accent }]}
-            onPress={() => {
-              setError(null);
-              setLoading(true);
-            }}
-          >
-            <Text style={[styles.retryButtonText, { color: theme.accentText }]}>Try Again</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+        {/* Progress Bar */}
+        {loading && (
+          <View style={styles.progressContainer}>
+            <View style={styles.progressBar}>
+              <Animated.View
+                style={[
+                  styles.progressFill,
+                  {
+                    width: `${progress}%`,
+                    backgroundColor: theme.accent,
+                  },
+                ]}
+              />
+            </View>
+          </View>
+        )}
 
-      {/* WebView */}
-      <WebView
-        source={{ uri: url }}
-        style={styles.webview}
-        onLoadStart={handleLoadStart}
-        onLoadEnd={handleLoadEnd}
-        onError={handleError}
-        onNavigationStateChange={handleNavigationStateChange}
-        startInLoadingState={true}
-        onLoadProgress={({ nativeEvent }) => {
-          setProgress(nativeEvent.progress * 100);
-        }}
-        javaScriptEnabled={true}
-        domStorageEnabled={true}
-        onShouldStartLoadWithRequest={(request) => {
-          return true;
-        }}
-      />
-    </View>
+        {/* WebView */}
+        <WebView
+          source={{ uri: url }}
+          style={styles.webview}
+          onLoadStart={handleLoadStart}
+          onLoadEnd={handleLoadEnd}
+          onError={handleError}
+          onNavigationStateChange={handleNavigationStateChange}
+          onLoadProgress={({ nativeEvent }) => {
+            setProgress(nativeEvent.progress * 100);
+          }}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          startInLoadingState={true}
+          allowsInlineMediaPlayback={true}
+          mediaPlaybackRequiresUserAction={false}
+        />
+
+        {/* Loading Overlay */}
+        {loading && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.accent} />
+            <Text style={[styles.loadingText, { color: theme.text }]}>
+              Loading article...
+            </Text>
+          </View>
+        )}
+
+        {/* Error State */}
+        {error && (
+          <View style={styles.errorContainer}>
+            <Ionicons name="alert-circle" size={48} color="#ef4444" />
+            <Text style={[styles.errorTitle, { color: theme.text }]}>
+              Failed to Load
+            </Text>
+            <Text style={[styles.errorMessage, { color: theme.textMuted }]}>
+              {error}
+            </Text>
+            <TouchableOpacity
+              style={[styles.retryButton, { backgroundColor: theme.accent }]}
+              onPress={() => {
+                setError(null);
+                setLoading(true);
+              }}
+            >
+              <Text style={[styles.retryButtonText, { color: '#fff' }]}>
+                Retry
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    </Modal>
   );
 };
 
 const styles = StyleSheet.create({
   fullscreenOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 9999,
-    backgroundColor: '#fff',
     flex: 1,
+    backgroundColor: '#fff',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    paddingTop: 60, // Account for status bar with statusBarTranslucent
     borderBottomWidth: 1,
-    paddingTop: 50, // Account for status bar
     shadowColor: '#000',
     shadowOffset: {
       width: 0,

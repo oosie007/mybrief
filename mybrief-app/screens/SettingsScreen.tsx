@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 import NotificationSettings from '../components/NotificationSettings';
+import SharedLayout from '../components/SharedLayout';
 
 interface UserProfile {
   id: string;
@@ -44,6 +45,9 @@ const SettingsScreen = ({ navigation }: any) => {
   const [newPassword, setNewPassword] = useState('');
   const [displayMode, setDisplayMode] = useState<'minimal' | 'rich'>('minimal');
   
+  // Accordion states
+  const [accountExpanded, setAccountExpanded] = useState(false);
+  
   // Feed configuration states
   const [articlesPerFeed, setArticlesPerFeed] = useState('10');
   const [totalArticles, setTotalArticles] = useState('50');
@@ -59,33 +63,53 @@ const SettingsScreen = ({ navigation }: any) => {
       setLoading(true);
       setError('');
       
-      // Mock data for demo purposes
-      const mockProfile: UserProfile = {
-        id: 'demo-user',
-        email: 'demo@example.com',
-        timezone: 'UTC',
-        digest_time: '07:00',
-        display_mode: 'minimal',
-        onboarding_completed: true,
-        created_at: new Date().toISOString(),
+      // Get the current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !user) {
+        console.error('Error getting user:', userError);
+        setError('Failed to load user profile');
+        return;
+      }
+
+      // Get user profile data from the users table
+      const { data: userProfile, error: profileError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError && profileError.code !== 'PGRST116') { // PGRST116 is "not found"
+        console.error('Error loading user profile:', profileError);
+        setError('Failed to load user profile');
+        return;
+      }
+
+      // Create profile object with real user data
+      const profile: UserProfile = {
+        id: user.id,
+        email: user.email || 'No email',
+        timezone: userProfile?.timezone || 'UTC',
+        digest_time: userProfile?.digest_time || '07:00',
+        display_mode: userProfile?.display_mode || 'minimal',
+        onboarding_completed: userProfile?.onboarding_completed || false,
+        created_at: user.created_at || new Date().toISOString(),
         feed_config: {
-          articles_per_feed: 10,
-          total_articles: 50,
-          time_window_hours: 24,
-          use_time_window: false,
+          articles_per_feed: userProfile?.feed_config?.articles_per_feed || 10,
+          total_articles: userProfile?.feed_config?.total_articles || 50,
+          time_window_hours: userProfile?.feed_config?.time_window_hours || 24,
+          use_time_window: userProfile?.feed_config?.use_time_window || false,
         },
       };
 
-      setProfile(mockProfile);
-      // setTimezone(mockProfile.timezone); // Removed as per edit hint
-      // setNotificationTime(mockProfile.digest_time); // Removed as per edit hint
-      setDisplayMode(mockProfile.display_mode);
+      setProfile(profile);
+      setDisplayMode(profile.display_mode);
       
       // Set feed configuration
-      setArticlesPerFeed(mockProfile.feed_config?.articles_per_feed?.toString() || '10');
-      setTotalArticles(mockProfile.feed_config?.total_articles?.toString() || '50');
-      setTimeWindowHours(mockProfile.feed_config?.time_window_hours?.toString() || '24');
-      setUseTimeWindow(mockProfile.feed_config?.use_time_window || false);
+      setArticlesPerFeed(profile.feed_config?.articles_per_feed?.toString() || '10');
+      setTotalArticles(profile.feed_config?.total_articles?.toString() || '50');
+      setTimeWindowHours(profile.feed_config?.time_window_hours?.toString() || '24');
+      setUseTimeWindow(profile.feed_config?.use_time_window || false);
     } catch (error) {
       console.error('Error loading profile:', error);
       setError('Failed to load profile');
@@ -137,7 +161,17 @@ const SettingsScreen = ({ navigation }: any) => {
   };
 
   const handleEmailChange = async () => {
-    if (!newEmail.trim()) return;
+    if (!newEmail.trim()) {
+      setError('Please enter a new email address');
+      return;
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newEmail)) {
+      setError('Please enter a valid email address');
+      return;
+    }
 
     setSaving(true);
     setError('');
@@ -150,18 +184,25 @@ const SettingsScreen = ({ navigation }: any) => {
       } else {
         setSuccess('Email update requested! Check your inbox for confirmation.');
         setNewEmail('');
+        // Refresh profile to show updated email
+        await loadProfile();
       }
     } catch (error) {
       console.error('Error updating email:', error);
-      setError('Failed to update email');
+      setError('Failed to update email. Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
   const handlePasswordChange = async () => {
-    if (!newPassword.trim() || newPassword.length < 6) {
-      setError('Password must be at least 6 characters');
+    if (!newPassword.trim()) {
+      setError('Please enter a new password');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters long');
       return;
     }
 
@@ -179,7 +220,7 @@ const SettingsScreen = ({ navigation }: any) => {
       }
     } catch (error) {
       console.error('Error updating password:', error);
-      setError('Failed to update password');
+      setError('Failed to update password. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -233,17 +274,21 @@ const SettingsScreen = ({ navigation }: any) => {
                 await supabase.from('daily_digests').delete().eq('user_id', profile.id);
               }
 
-              // Delete the auth user
-              const { error } = await supabase.auth.admin.deleteUser(profile?.id || '');
+              // Sign out the user
+              const { error } = await supabase.auth.signOut();
               if (error) {
-                console.error('Error deleting account:', error);
-                Alert.alert('Error', 'Failed to delete account');
+                console.error('Error signing out:', error);
+                Alert.alert('Error', 'Failed to sign out after data deletion');
               } else {
-                navigation.navigate('SignIn');
+                Alert.alert(
+                  'Account Deleted',
+                  'Your data has been deleted and you have been signed out. The account will be fully removed within 24 hours.',
+                  [{ text: 'OK' }]
+                );
               }
             } catch (error) {
               console.error('Error deleting account:', error);
-              Alert.alert('Error', 'Failed to delete account');
+              Alert.alert('Error', 'Failed to delete account data');
             }
           },
         },
@@ -257,7 +302,8 @@ const SettingsScreen = ({ navigation }: any) => {
     subtitle, 
     onPress, 
     rightElement,
-    showBorder = true 
+    showBorder = true,
+    variant = 'default'
   }: {
     icon: string;
     title: string;
@@ -265,13 +311,14 @@ const SettingsScreen = ({ navigation }: any) => {
     onPress?: () => void;
     rightElement?: React.ReactNode;
     showBorder?: boolean;
+    variant?: 'default' | 'heading';
   }) => (
     <TouchableOpacity
       style={[
         styles.settingItem,
         { borderBottomColor: theme.border },
         showBorder && { borderBottomWidth: 1 },
-        onPress && { backgroundColor: theme.hover }
+        onPress && variant === 'heading' && { backgroundColor: theme.hover }
       ]}
       onPress={onPress}
       disabled={!onPress}
@@ -312,19 +359,10 @@ const SettingsScreen = ({ navigation }: any) => {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.headerBg, borderBottomColor: theme.border }]}>
-        <View style={styles.headerTop}>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Settings</Text>
-          <TouchableOpacity style={styles.headerButton} onPress={handleSaveProfile} disabled={saving}>
-            <Text style={[styles.saveButton, { color: saving ? theme.textMuted : theme.accent }]}>
-              {saving ? 'Saving...' : 'Save'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
+    <SharedLayout
+      navigation={navigation}
+      currentScreen="settings"
+    >
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Error/Success Messages */}
         {error ? (
@@ -346,86 +384,108 @@ const SettingsScreen = ({ navigation }: any) => {
         <View style={[styles.section, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
           <SettingItem
             icon="person"
-            title="Email"
+            title="My Account"
             subtitle={profile?.email}
+            onPress={() => setAccountExpanded(!accountExpanded)}
+            variant="heading"
             rightElement={
-              <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
+              <Ionicons 
+                name={accountExpanded ? "chevron-up" : "chevron-down"} 
+                size={16} 
+                color={theme.textMuted} 
+              />
             }
-            onPress={() => {
-              // Could open email change modal
-              Alert.alert('Email', 'Use the form below to change your email');
-            }}
           />
           
-          <View style={styles.formGroup}>
-            <Text style={[styles.formLabel, { color: theme.text }]}>New Email</Text>
-            <TextInput
-              style={[styles.formInput, { 
-                backgroundColor: theme.background, 
-                borderColor: theme.border,
-                color: theme.text 
-              }]}
-              placeholder="Enter new email"
-              placeholderTextColor={theme.textMuted}
-              value={newEmail}
-              onChangeText={setNewEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-            <TouchableOpacity
-              style={[styles.formButton, { backgroundColor: theme.accent }]}
-              onPress={handleEmailChange}
-              disabled={saving || !newEmail.trim()}
-            >
-              <Text style={[styles.formButtonText, { color: theme.accentText }]}>
-                Update Email
-              </Text>
-            </TouchableOpacity>
-          </View>
+          {accountExpanded && (
+            <View style={[styles.accordionContent, { 
+              borderTopColor: theme.border,
+              backgroundColor: theme.background 
+            }]}>
+              <View style={[styles.formGroup, { borderTopColor: theme.border }]}>
+                <Text style={[styles.formLabel, { color: theme.text }]}>New Email</Text>
+                <TextInput
+                  style={[styles.formInput, { 
+                    backgroundColor: theme.cardBg, 
+                    borderColor: newEmail.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail) ? '#16a34a' : theme.border,
+                    color: theme.text 
+                  }]}
+                  placeholder="Enter new email"
+                  placeholderTextColor={theme.textMuted}
+                  value={newEmail}
+                  onChangeText={setNewEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                />
+                <TouchableOpacity
+                  style={[styles.formButton, { 
+                    backgroundColor: newEmail.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail) ? theme.accent : theme.border,
+                    opacity: newEmail.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail) ? 1 : 0.5
+                  }]}
+                  onPress={handleEmailChange}
+                  disabled={saving || !newEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)}
+                >
+                  <Text style={[styles.formButtonText, { 
+                    color: newEmail.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail) ? 
+                      theme.accentText : theme.textMuted 
+                  }]}>
+                    {saving ? 'Updating...' : 'Update Email'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
 
-          <View style={styles.formGroup}>
-            <Text style={[styles.formLabel, { color: theme.text }]}>New Password</Text>
-            <TextInput
-              style={[styles.formInput, { 
-                backgroundColor: theme.background, 
-                borderColor: theme.border,
-                color: theme.text 
-              }]}
-              placeholder="Enter new password"
-              placeholderTextColor={theme.textMuted}
-              value={newPassword}
-              onChangeText={setNewPassword}
-              secureTextEntry
-            />
-            <TouchableOpacity
-              style={[styles.formButton, { backgroundColor: theme.accent }]}
-              onPress={handlePasswordChange}
-              disabled={saving || !newPassword.trim()}
-            >
-              <Text style={[styles.formButtonText, { color: theme.accentText }]}>
-                Update Password
-              </Text>
-            </TouchableOpacity>
-          </View>
+              <View style={[styles.formGroup, { borderTopColor: theme.border }]}>
+                <Text style={[styles.formLabel, { color: theme.text }]}>New Password</Text>
+                <TextInput
+                  style={[styles.formInput, { 
+                    backgroundColor: theme.cardBg, 
+                    borderColor: newPassword.length >= 6 ? '#16a34a' : theme.border,
+                    color: theme.text 
+                  }]}
+                  placeholder="Enter new password (min 6 characters)"
+                  placeholderTextColor={theme.textMuted}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  secureTextEntry
+                />
+                <TouchableOpacity
+                  style={[styles.formButton, { 
+                    backgroundColor: newPassword.length >= 6 ? theme.accent : theme.border,
+                    opacity: newPassword.length >= 6 ? 1 : 0.5
+                  }]}
+                  onPress={handlePasswordChange}
+                  disabled={saving || !newPassword.trim() || newPassword.length < 6}
+                >
+                  <Text style={[styles.formButtonText, { 
+                    color: newPassword.length >= 6 ? 
+                      theme.accentText : theme.textMuted 
+                  }]}>
+                    {saving ? 'Updating...' : 'Update Password'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          <SettingItem
+            icon="log-out"
+            title="Sign Out"
+            subtitle="Sign out of your account"
+            onPress={handleSignOut}
+          />
+
+          <SettingItem
+            icon="trash"
+            title="Delete Account"
+            subtitle="Permanently delete your account and all data"
+            onPress={handleDeleteAccount}
+            showBorder={false}
+          />
         </View>
 
         {/* Preferences Section */}
         <SectionHeader title="Preferences" />
         <View style={[styles.section, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-          <SettingItem
-            icon="eye"
-            title="Display Mode"
-            subtitle={displayMode === 'minimal' ? 'Minimal (text-only)' : 'Rich (with images)'}
-            rightElement={
-              <Switch
-                value={displayMode === 'minimal'}
-                onValueChange={(value) => setDisplayMode(value ? 'minimal' : 'rich')}
-                trackColor={{ false: theme.border, true: theme.accent }}
-                thumbColor={theme.background}
-              />
-            }
-          />
-
           <SettingItem
             icon={isDarkMode ? 'sunny' : 'moon'}
             title="Theme"
@@ -463,7 +523,7 @@ const SettingsScreen = ({ navigation }: any) => {
           />
 
           {useTimeWindow ? (
-            <View style={styles.formGroup}>
+            <View style={[styles.formGroup, { borderTopColor: theme.border }]}>
               <Text style={[styles.formLabel, { color: theme.text }]}>Time Window (hours)</Text>
               <TextInput
                 style={[styles.formInput, { 
@@ -483,7 +543,7 @@ const SettingsScreen = ({ navigation }: any) => {
             </View>
           ) : (
             <>
-              <View style={styles.formGroup}>
+              <View style={[styles.formGroup, { borderTopColor: theme.border }]}>
                 <Text style={[styles.formLabel, { color: theme.text }]}>Articles per Feed</Text>
                 <TextInput
                   style={[styles.formInput, { 
@@ -502,7 +562,7 @@ const SettingsScreen = ({ navigation }: any) => {
                 </Text>
               </View>
 
-              <View style={styles.formGroup}>
+              <View style={[styles.formGroup, { borderTopColor: theme.border }]}>
                 <Text style={[styles.formLabel, { color: theme.text }]}>Total Articles Limit</Text>
                 <TextInput
                   style={[styles.formInput, { 
@@ -574,31 +634,6 @@ const SettingsScreen = ({ navigation }: any) => {
           />
         </View>
 
-        {/* Account Actions Section */}
-        <SectionHeader title="Account Actions" />
-        <View style={[styles.section, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-          <SettingItem
-            icon="log-out"
-            title="Sign Out"
-            subtitle="Sign out of your account"
-            onPress={handleSignOut}
-            rightElement={
-              <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
-            }
-          />
-
-          <SettingItem
-            icon="trash"
-            title="Delete Account"
-            subtitle="Permanently delete your account and all data"
-            onPress={handleDeleteAccount}
-            rightElement={
-              <Ionicons name="chevron-forward" size={16} color="#ef4444" />
-            }
-            showBorder={false}
-          />
-        </View>
-
         {/* App Info Section */}
         <SectionHeader title="App Info" />
         <View style={[styles.section, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
@@ -610,38 +645,7 @@ const SettingsScreen = ({ navigation }: any) => {
           />
         </View>
       </ScrollView>
-      
-      {/* Bottom Navigation */}
-      <View style={[styles.bottomNav, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
-        <TouchableOpacity 
-          style={styles.navButton}
-          onPress={() => navigation.navigate('Home')}
-        >
-          <Ionicons name="home-outline" size={24} color={theme.textSecondary} />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navButton}
-          onPress={() => navigation.navigate('FeedManagement')}
-        >
-          <Ionicons name="list-outline" size={24} color={theme.textSecondary} />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navButton}
-          onPress={() => navigation.navigate('SavedArticles')}
-        >
-          <Ionicons name="heart-outline" size={24} color={theme.textSecondary} />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.navButton, { backgroundColor: theme.hover }]}
-          onPress={() => navigation.navigate('Settings')}
-        >
-          <Ionicons name="settings-outline" size={24} color={theme.accent} />
-        </TouchableOpacity>
-      </View>
-    </View>
+    </SharedLayout>
   );
 };
 
@@ -732,7 +736,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
   },
   formLabel: {
     fontSize: 14,
@@ -762,26 +765,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginLeft: 12,
   },
-  bottomNav: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    paddingBottom: 34, // Increased safe area padding
-    paddingTop: 12, // Reduced top padding
-    paddingHorizontal: 8, // Add horizontal padding
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 8,
-  },
-  navButton: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8, // Reduced padding
-    borderRadius: 8,
-    marginHorizontal: 4, // Increased margin
-    minHeight: 40, // Reduced height
+  accordionContent: {
+    paddingTop: 12,
+    paddingBottom: 16,
   },
 });
 

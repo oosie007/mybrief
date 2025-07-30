@@ -21,6 +21,7 @@ import { getFeedSourceFavicon } from '../lib/faviconService';
 import ArticleViewer from '../components/ArticleViewer';
 import { savedArticlesService, SavedArticle } from '../lib/savedArticlesService';
 import { cleanContentForDisplay, cleanTitle } from '../lib/contentCleaner';
+import SharedLayout from '../components/SharedLayout';
 
 const SavedArticlesScreen = ({ navigation }: any) => {
   const { theme, isDarkMode } = useTheme();
@@ -29,8 +30,6 @@ const SavedArticlesScreen = ({ navigation }: any) => {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'unread' | 'read'>('all');
-  const [selectedArticles, setSelectedArticles] = useState<string[]>([]);
-  const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showArticleViewer, setShowArticleViewer] = useState(false);
   const [currentArticle, setCurrentArticle] = useState<SavedArticle | null>(null);
@@ -139,14 +138,13 @@ const SavedArticlesScreen = ({ navigation }: any) => {
               const { error } = await supabase
                 .from('saved_articles')
                 .delete()
-                .eq('id', articleId);
+                .eq('content_item_id', articleId);
 
               if (error) {
                 console.error('Error removing saved article:', error);
                 Alert.alert('Error', 'Failed to remove article');
               } else {
-                setSavedArticles(prev => prev.filter(article => article.id !== articleId));
-                setSelectedArticles(prev => prev.filter(id => id !== articleId));
+                setSavedArticles(prev => prev.filter(article => article.content_item_id !== articleId));
               }
             } catch (error) {
               console.error('Error removing saved article:', error);
@@ -156,53 +154,6 @@ const SavedArticlesScreen = ({ navigation }: any) => {
         },
       ]
     );
-  };
-
-  const removeMultipleArticles = async () => {
-    Alert.alert(
-      'Remove Articles',
-      `Are you sure you want to remove ${selectedArticles.length} articles from your saved list?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from('saved_articles')
-                .delete()
-                .in('id', selectedArticles);
-
-              if (error) {
-                console.error('Error removing saved articles:', error);
-                Alert.alert('Error', 'Failed to remove articles');
-              } else {
-                setSavedArticles(prev => prev.filter(article => !selectedArticles.includes(article.id)));
-                setSelectedArticles([]);
-                setIsSelectionMode(false);
-              }
-            } catch (error) {
-              console.error('Error removing saved articles:', error);
-              Alert.alert('Error', 'Failed to remove articles');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const toggleSelection = (articleId: string) => {
-    setSelectedArticles(prev =>
-      prev.includes(articleId)
-        ? prev.filter(id => id !== articleId)
-        : [...prev, articleId]
-    );
-  };
-
-  const toggleSelectionMode = () => {
-    setIsSelectionMode(!isSelectionMode);
-    setSelectedArticles([]);
   };
 
   const handleOpenArticle = async (article: SavedArticle) => {
@@ -422,7 +373,7 @@ const SavedArticlesScreen = ({ navigation }: any) => {
           <View style={styles.cardActions}>
             <TouchableOpacity
               style={styles.actionButton}
-              onPress={() => removeSavedArticle(article.id)}
+              onPress={() => removeSavedArticle(article.content_item_id)}
             >
               <Ionicons name="trash-outline" size={16} color={theme.textSecondary} />
             </TouchableOpacity>
@@ -497,125 +448,52 @@ const SavedArticlesScreen = ({ navigation }: any) => {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.headerBg, borderBottomColor: theme.border }]}>
-        <View style={styles.headerTop}>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Saved Articles</Text>
-          <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.headerButton} onPress={toggleSelectionMode}>
-              <Ionicons
-                name={isSelectionMode ? 'close' : 'checkbox-outline'}
-                size={20}
-                color={theme.text}
-              />
-            </TouchableOpacity>
-            {isSelectionMode && selectedArticles.length > 0 && (
-              <TouchableOpacity style={styles.headerButton} onPress={removeMultipleArticles}>
-                <Ionicons name="trash" size={20} color="#ef4444" />
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-
-        {/* Search Bar */}
-        <View style={[styles.searchContainer, { backgroundColor: theme.cardBg }]}>
-          <Ionicons name="search" size={16} color={theme.textMuted} style={styles.searchIcon} />
-          <TextInput
-            style={[styles.searchInput, { color: theme.text }]}
-            placeholder="Search saved articles..."
-            placeholderTextColor={theme.textMuted}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
+    <>
+      <SharedLayout
+        navigation={navigation}
+        currentScreen="saved"
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search saved articles..."
+        activeCategory={filter}
+        onCategoryChange={(category) => setFilter(category as 'all' | 'unread' | 'read')}
+        categories={[
+          { key: 'all', label: 'All', count: savedArticles.length },
+          { key: 'unread', label: 'Unread', count: unreadCount },
+          { key: 'read', label: 'Read', count: readCount },
+        ]}
+        showFilters={true}
+      >
+        {/* Content */}
+        {loading ? (
+          <ScrollView 
+            style={styles.contentContainer}
+            showsVerticalScrollIndicator={false}
+          >
+            <SkeletonLoadingState />
+          </ScrollView>
+        ) : (
+          <FlatList
+            data={filteredArticles}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => <SavedArticleCard article={item} />}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+            ListEmptyComponent={
+              searchQuery ? (
+                <SearchEmptyState query={searchQuery} />
+              ) : (
+                <NoSavedArticlesState onAddFeeds={() => navigation.navigate('FeedManagement')} />
+              )
+            }
+            showsVerticalScrollIndicator={false}
           />
-        </View>
+        )}
+      </SharedLayout>
 
-        {/* Filter Tabs */}
-        <View style={styles.filterContainer}>
-          {[
-            { key: 'all', label: 'All', count: savedArticles.length },
-            { key: 'unread', label: 'Unread', count: unreadCount },
-            { key: 'read', label: 'Read', count: readCount },
-          ].map((tab) => (
-            <TouchableOpacity
-              key={tab.key}
-              style={[
-                styles.filterTab,
-                filter === tab.key && { backgroundColor: theme.accent }
-              ]}
-              onPress={() => setFilter(tab.key as any)}
-            >
-              <Text style={[
-                styles.filterTabText,
-                filter === tab.key ? { color: theme.accentText } : { color: theme.pillText }
-              ]}>
-                {tab.label} ({tab.count})
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      {/* Content */}
-      {loading ? (
-        <ScrollView 
-          style={styles.contentContainer}
-          showsVerticalScrollIndicator={false}
-        >
-          <SkeletonLoadingState />
-        </ScrollView>
-      ) : (
-        <FlatList
-          data={filteredArticles}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <SavedArticleCard article={item} />}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-          ListEmptyComponent={
-            searchQuery ? (
-              <SearchEmptyState query={searchQuery} />
-            ) : (
-              <NoSavedArticlesState onAddFeeds={() => navigation.navigate('FeedManagement')} />
-            )
-          }
-          showsVerticalScrollIndicator={false}
-        />
-      )}
-      
-      {/* Bottom Navigation */}
-      <View style={[styles.bottomNav, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
-        <TouchableOpacity 
-          style={styles.navButton}
-          onPress={() => navigation.navigate('Home')}
-        >
-          <Ionicons name="home-outline" size={24} color={theme.textSecondary} />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navButton}
-          onPress={() => navigation.navigate('FeedManagement')}
-        >
-          <Ionicons name="list-outline" size={24} color={theme.textSecondary} />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.navButton, { backgroundColor: theme.hover }]}
-          onPress={() => navigation.navigate('SavedArticles')}
-        >
-          <Ionicons name="heart-outline" size={24} color={theme.accent} />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navButton}
-          onPress={() => navigation.navigate('Settings')}
-        >
-          <Ionicons name="settings-outline" size={24} color={theme.textSecondary} />
-        </TouchableOpacity>
-      </View>
-      
-      {/* Article Viewer */}
+      {/* Article Viewer - Outside SharedLayout */}
       {showArticleViewer && currentArticle && (
         <ArticleViewer
           url={currentArticle.content_data?.url || ''}
@@ -626,10 +504,10 @@ const SavedArticlesScreen = ({ navigation }: any) => {
           }}
           onSave={(article) => handleSaveArticle(currentArticle)}
           onShare={(article) => handleShareArticle(currentArticle)}
-          isSaved={true} // Always true since this is from saved articles
+          isSaved={true}
         />
       )}
-    </View>
+    </>
   );
 };
 
@@ -638,15 +516,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    borderBottomWidth: 1,
     paddingTop: 50,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
   },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    marginBottom: 16,
   },
   headerTitle: {
     fontSize: 18,
@@ -658,7 +537,6 @@ const styles = StyleSheet.create({
   },
   headerButton: {
     padding: 8,
-    marginLeft: 4,
     borderRadius: 6,
   },
   searchContainer: {
@@ -836,6 +714,27 @@ const styles = StyleSheet.create({
   },
   publishedText: {
     fontSize: 11,
+  },
+  logoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  logo: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  logoInner: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+  },
+  appTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
   },
 });
 

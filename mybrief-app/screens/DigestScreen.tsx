@@ -25,6 +25,7 @@ import { getFeedSourceFavicon } from '../lib/faviconService';
 import ArticleViewer from '../components/ArticleViewer';
 import { savedArticlesService } from '../lib/savedArticlesService';
 import { cleanContentForDisplay, cleanTitle } from '../lib/contentCleaner';
+import SharedLayout from '../components/SharedLayout';
 
 interface ContentItem {
   id: string;
@@ -1080,229 +1081,90 @@ const DigestScreen = ({ navigation }: any) => {
   const { newsArticles, socialPosts, videoPosts } = getContentByType();
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.headerBg, borderBottomColor: theme.border }]}>
-        <View style={styles.headerTop}>
-          <View style={styles.logoContainer}>
-            <View style={[styles.logo, { backgroundColor: theme.accent }]}>
-              <View style={[styles.logoInner, { backgroundColor: theme.background }]} />
-            </View>
-            <Text style={[styles.appTitle, { color: theme.text }]}>mybrief</Text>
-          </View>
-          
-          <View style={styles.headerActions}>
-            <TouchableOpacity 
-              style={styles.headerButton} 
-              onPress={toggleFilters}
-            >
-              <Ionicons 
-                name="filter" 
-                size={18} 
-                color={filtersVisible ? theme.accent : theme.text} 
-              />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.headerButton}
-              onPress={toggleSearch}
-            >
-              <Ionicons 
-                name="search" 
-                size={18} 
-                color={searchVisible ? theme.accent : theme.text} 
-              />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.headerButton} onPress={onRefresh}>
-              <Ionicons name="refresh" size={18} color={theme.text} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Search Bar - Collapsible */}
-        <Animated.View 
-          style={[
-            styles.searchContainer, 
-            { 
-              backgroundColor: theme.background,
-              maxHeight: searchAnimation.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, 50], // Reduced from 60
-              }),
-              opacity: searchAnimation,
-            }
-          ]}
-        >
-          {searchVisible && (
-            <View style={[styles.searchInputContainer, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-              <Ionicons name="search" size={16} color={theme.textMuted} style={styles.searchIcon} />
-              <TextInput
-                style={[styles.searchInput, { color: theme.text }]}
-                placeholder="Search articles..."
-                placeholderTextColor={theme.textMuted}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity onPress={() => setSearchQuery('')}>
-                  <Ionicons name="close-circle" size={16} color={theme.textMuted} />
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-        </Animated.View>
-
-        {/* Category Filter - Collapsible */}
-        <Animated.View
-          style={[
-            styles.categoryContainer,
-            {
-              maxHeight: filtersAnimation.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, 40], // Reduced from 50
-              }),
-              opacity: filtersAnimation,
-            }
-          ]}
-        >
-          {filtersVisible && (
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.categoryContent}
-            >
-              {categories.map((category) => (
-                <TouchableOpacity
-                  key={category}
-                  style={[
-                    styles.categoryPill,
-                    activeCategory === category 
-                      ? { backgroundColor: theme.accent }
-                      : { backgroundColor: theme.pill }
-                  ]}
-                  onPress={() => setActiveCategory(category)}
-                >
-                  <Text style={[
-                    styles.categoryText,
-                    activeCategory === category 
-                      ? { color: theme.accentText }
-                      : { color: theme.pillText }
-                  ]}>
-                    {category}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          )}
-        </Animated.View>
-      </View>
-
-      {/* Content */}
-      <ScrollView
-        style={styles.contentContainer}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        showsVerticalScrollIndicator={false}
+    <>
+      <SharedLayout 
+        navigation={navigation} 
+        currentScreen="home"
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search articles..."
+        activeCategory={activeCategory}
+        onCategoryChange={setActiveCategory}
+        categories={categories}
+        showFilters={true}
       >
-        {loading && (refreshing || (!digest && !hasCachedContent && isInitialLoad)) ? (
-          <>
-            {console.log('=== RENDER DEBUG: Showing skeleton loader ===')}
-            {console.log('loading:', loading, 'hasCachedContent:', hasCachedContent, 'digest:', !!digest, 'isInitialLoad:', isInitialLoad, 'refreshing:', refreshing)}
+        {/* Content */}
+        <ScrollView
+          style={styles.content}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          showsVerticalScrollIndicator={false}
+        >
+          {loading ? (
             <SkeletonLoadingState />
-          </>
-        ) : digest ? (
-          <>
-            {console.log('=== RENDER DEBUG: Showing actual content ===')}
-            {console.log('loading:', loading, 'hasCachedContent:', hasCachedContent, 'digest:', !!digest)}
-            {/* News & Articles Section */}
-            {newsArticles.length > 0 && (
-              <>
-                <View style={styles.sectionHeader}>
-                  <Text style={[styles.sectionTitle, { color: theme.text }]}>News & Articles</Text>
-                  <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
-                    {newsArticles.length} article{newsArticles.length !== 1 ? 's' : ''} for today
-                  </Text>
+          ) : error ? (
+            <ErrorState title="Failed to load digest" message={error} onRetry={loadTodayDigest} />
+          ) : !digest && !isInitialLoad ? (
+            <NoDigestState />
+          ) : (
+            <>
+              {/* News & Articles Section */}
+              {newsArticles.length > 0 && (
+                <View style={styles.section}>
+                  <View style={styles.sectionHeader}>
+                    <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                      News & Articles
+                    </Text>
+                    <Text style={[styles.sectionSubtitle, { color: theme.textMuted }]}>
+                      {newsArticles.length} articles for today
+                    </Text>
+                  </View>
+                  {newsArticles.map((item, index) => (
+                    <ContentCard key={item.id || index} item={item} />
+                  ))}
                 </View>
+              )}
 
-                {newsArticles.map((item: any, index: number) => (
-                  <ContentCard key={item.id || index} item={item} />
-                ))}
-                
-                <View style={styles.sectionDivider}>
-                  <View style={[styles.dividerLine, { backgroundColor: theme.divider }]} />
+              {/* Communities Section */}
+              {socialPosts.length > 0 && (
+                <View style={styles.section}>
+                  <View style={styles.sectionHeader}>
+                    <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                      Communities
+                    </Text>
+                    <Text style={[styles.sectionSubtitle, { color: theme.textMuted }]}>
+                      {socialPosts.length} posts from communities
+                    </Text>
+                  </View>
+                  {socialPosts.map((item, index) => (
+                    <ContentCard key={item.id || index} item={item} />
+                  ))}
                 </View>
-              </>
-            )}
+              )}
 
-            {/* Communities Section (Reddit) */}
-            {socialPosts.length > 0 && (
-              <>
-                <View style={styles.sectionHeader}>
-                  <Text style={[styles.sectionTitle, { color: theme.text }]}>Communities</Text>
-                  <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
-                    {socialPosts.length} post{socialPosts.length !== 1 ? 's' : ''} from communities
-                  </Text>
+              {/* Videos Section */}
+              {videoPosts.length > 0 && (
+                <View style={styles.section}>
+                  <View style={styles.sectionHeader}>
+                    <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                      Videos
+                    </Text>
+                    <Text style={[styles.sectionSubtitle, { color: theme.textMuted }]}>
+                      {videoPosts.length} videos for today
+                    </Text>
+                  </View>
+                  {videoPosts.map((item, index) => (
+                    <YouTubeCard key={item.id || index} item={item} />
+                  ))}
                 </View>
+              )}
+            </>
+          )}
+        </ScrollView>
+      </SharedLayout>
 
-                {socialPosts.map((item: any, index: number) => (
-                  <ContentCard key={item.id || index} item={item} />
-                ))}
-                
-                <View style={styles.sectionDivider}>
-                  <View style={[styles.dividerLine, { backgroundColor: theme.divider }]} />
-                </View>
-              </>
-            )}
-
-            {/* YouTube Videos Section */}
-            {videoPosts.length > 0 && (
-              <>
-                <View style={styles.sectionHeader}>
-                  <Text style={[styles.sectionTitle, { color: theme.text }]}>Videos</Text>
-                  <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
-                    {videoPosts.length} video{videoPosts.length !== 1 ? 's' : ''} from channels
-                  </Text>
-                </View>
-
-                {videoPosts.map((item: any, index: number) => (
-                  <YouTubeCard key={item.id || index} item={item} />
-                ))}
-                
-                <View style={styles.sectionDivider}>
-                  <View style={[styles.dividerLine, { backgroundColor: theme.divider }]} />
-                </View>
-              </>
-            )}
-
-            {/* Empty State */}
-            {newsArticles.length === 0 && socialPosts.length === 0 && videoPosts.length === 0 && (
-              <View style={styles.emptyState}>
-                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                  No content available for {activeCategory}
-                </Text>
-              </View>
-            )}
-            
-            <View style={styles.endDivider}>
-              <View style={[styles.dividerLine, { backgroundColor: theme.divider }]} />
-            </View>
-          </>
-        ) : !loading && !isInitialLoad ? (
-          <NoDigestState onRefresh={onRefresh} />
-        ) : null}
-      </ScrollView>
-
-      {/* Save Article Modal */}
-      {/* This modal is no longer needed as saving is handled by savedArticlesService */}
-      {/* <SaveArticleModal
-        visible={saveModalVisible}
-        onClose={() => setSaveModalVisible(false)}
-        contentItemId={selectedArticle?.id || ''}
-        articleTitle={selectedArticle?.title || ''}
-        onSave={handleArticleSaved}
-      /> */}
-
-      {/* Article Viewer Modal */}
+      {/* Article Viewer Modal - Outside SharedLayout */}
       {articleViewerVisible && selectedArticle && (
         <ArticleViewer
           url={selectedArticle.url}
@@ -1316,38 +1178,7 @@ const DigestScreen = ({ navigation }: any) => {
           isSaved={savedArticles.has(selectedArticle.id)}
         />
       )}
-
-      {/* Bottom Navigation */}
-      <View style={[styles.bottomNav, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
-        <TouchableOpacity 
-          style={[styles.navButton, { backgroundColor: theme.hover }]}
-          onPress={() => navigation.navigate('Home')}
-        >
-          <Ionicons name="home-outline" size={24} color={theme.accent} />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navButton}
-          onPress={() => navigation.navigate('FeedManagement')}
-        >
-          <Ionicons name="list-outline" size={24} color={theme.textSecondary} />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navButton}
-          onPress={() => navigation.navigate('SavedArticles')}
-        >
-          <Ionicons name="heart-outline" size={24} color={theme.textSecondary} />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navButton}
-          onPress={() => navigation.navigate('Settings')}
-        >
-          <Ionicons name="settings-outline" size={24} color={theme.textSecondary} />
-        </TouchableOpacity>
-      </View>
-    </View>
+    </>
   );
 };
 
@@ -1422,150 +1253,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  contentContainer: {
+  content: {
     flex: 1,
-    paddingHorizontal: 16,
-  },
-  contentCard: {
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  sourceInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  sourceText: {
-    fontSize: 12,
-    marginLeft: 4,
-    marginRight: 8,
-  },
-
-  cardActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  actionButton: {
-    padding: 4,
-    marginLeft: 8,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    lineHeight: 24,
-    marginBottom: 8,
-    fontFamily: 'Georgia',
-    letterSpacing: -0.7,
-    fontStyle: 'normal',
-  },
-  cardSummary: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 12,
-    fontFamily: 'System',
-    fontWeight: '400',
-    color: '#6B7280', // Light gray like in your reference
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  categoryTag: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  categoryTagText: {
-    fontSize: 11,
-    fontWeight: '500',
-  },
-  readTime: {
-    fontSize: 11,
-  },
-
-  shareButton: {
-    padding: 4,
-  },
-  emptyState: {
-    paddingVertical: 40,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 16,
-  },
-  endDivider: {
-    paddingVertical: 20,
-    alignItems: 'center',
-  },
-  dividerLine: {
-    width: 40,
-    height: 1,
-  },
-  bottomNav: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    paddingBottom: 34, // Increased safe area padding
-    paddingTop: 12, // Reduced top padding
-    paddingHorizontal: 8, // Add horizontal padding
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 8,
-  },
-  navButton: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8, // Reduced padding
-    borderRadius: 8,
-    marginHorizontal: 4, // Increased margin
-    minHeight: 40, // Reduced height
-  },
-  publishedDate: {
-    fontSize: 12,
-    color: '#666',
-    alignSelf: 'center',
-    fontWeight: '500',
-  },
-  sourceIcon: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    marginRight: 4,
-  },
-  readIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 10,
-  },
-  readText: {
-    fontSize: 11,
-    marginLeft: 4,
-  },
-  sectionHeader: {
-    marginBottom: 12,
     paddingHorizontal: 16,
     paddingTop: 24,
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionHeader: {
+    marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 4,
-    fontFamily: 'Georgia',
+    fontFamily: 'System',
     letterSpacing: -0.7,
   },
   sectionSubtitle: {
@@ -1652,6 +1355,77 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   youtubeMetricText: {
+    fontSize: 11,
+    marginLeft: 4,
+  },
+  contentCard: {
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  sourceInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sourceText: {
+    fontSize: 12,
+    marginLeft: 4,
+    marginRight: 8,
+  },
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  actionButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    lineHeight: 24,
+    marginBottom: 8,
+    fontFamily: 'Georgia',
+    letterSpacing: -0.7,
+    fontStyle: 'normal',
+  },
+  cardSummary: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 12,
+    fontFamily: 'System',
+    fontWeight: '400',
+    color: '#6B7280',
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sourceIcon: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    marginRight: 4,
+  },
+  readIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 10,
+  },
+  readText: {
     fontSize: 11,
     marginLeft: 4,
   },
