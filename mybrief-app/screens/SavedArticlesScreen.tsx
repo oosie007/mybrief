@@ -22,11 +22,12 @@ import ArticleViewer from '../components/ArticleViewer';
 import { savedArticlesService, SavedArticle } from '../lib/savedArticlesService';
 import { cleanContentForDisplay, cleanTitle } from '../lib/contentCleaner';
 import SharedLayout from '../components/SharedLayout';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SavedArticlesScreen = ({ navigation }: any) => {
   const { theme, isDarkMode } = useTheme();
   const [savedArticles, setSavedArticles] = useState<SavedArticle[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Changed from true to false
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'unread' | 'read'>('all');
@@ -40,8 +41,10 @@ const SavedArticlesScreen = ({ navigation }: any) => {
   const [hasCachedContent, setHasCachedContent] = useState(false);
   const [lastSaveTime, setLastSaveTime] = useState<number>(0); // Track when articles were saved
 
-  // Cache duration: 1 hour in milliseconds (saved articles change less frequently)
-  const CACHE_DURATION = 1 * 60 * 60 * 1000;
+  // Cache duration: 30 minutes in milliseconds (saved articles change less frequently)
+  const CACHE_DURATION = 30 * 60 * 1000;
+  const CACHE_KEY = 'saved_articles_cache';
+  const CACHE_TIMESTAMP_KEY = 'saved_articles_cache_timestamp';
 
   const shouldRefreshContent = () => {
     const now = Date.now();
@@ -49,9 +52,79 @@ const SavedArticlesScreen = ({ navigation }: any) => {
     return timeSinceLastRefresh > CACHE_DURATION;
   };
 
+  // Save saved articles to cache
+  const saveArticlesToCache = async (articles: SavedArticle[]) => {
+    try {
+      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(articles));
+      await AsyncStorage.setItem(CACHE_TIMESTAMP_KEY, Date.now().toString());
+      console.log('Saved articles cached');
+    } catch (error) {
+      console.error('Error saving articles to cache:', error);
+    }
+  };
+
+  // Load saved articles from cache
+  const loadArticlesFromCache = async (): Promise<SavedArticle[] | null> => {
+    try {
+      const cachedArticles = await AsyncStorage.getItem(CACHE_KEY);
+      const cacheTimestamp = await AsyncStorage.getItem(CACHE_TIMESTAMP_KEY);
+      
+      if (cachedArticles && cacheTimestamp) {
+        const timestamp = parseInt(cacheTimestamp);
+        const now = Date.now();
+        
+        // Check if cache is still valid (within 30 minutes)
+        if (now - timestamp < CACHE_DURATION) {
+          console.log('Loading saved articles from cache');
+          return JSON.parse(cachedArticles);
+        } else {
+          console.log('Saved articles cache expired, clearing');
+          await AsyncStorage.removeItem(CACHE_KEY);
+          await AsyncStorage.removeItem(CACHE_TIMESTAMP_KEY);
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error('Error loading articles from cache:', error);
+      return null;
+    }
+  };
+
   useEffect(() => {
-    loadSavedArticles();
+    const initializeScreen = async () => {
+      console.log('=== INITIALIZING SAVED ARTICLES SCREEN ===');
+      
+      // Set loading to true initially to prevent flash
+      setLoading(true);
+      
+      // Try to load from cache first
+      const cachedArticles = await loadArticlesFromCache();
+      if (cachedArticles) {
+        console.log('Found cached articles, setting them immediately');
+        setSavedArticles(cachedArticles);
+        setHasCachedContent(true);
+        setLoading(false);
+        setIsInitialLoad(false);
+      } else {
+        console.log('No cached articles found, will load fresh data');
+        // Keep loading true until we get fresh data
+      }
+      
+      // Always load fresh data in background
+      loadSavedArticles();
+    };
+    
+    initializeScreen();
   }, []);
+
+  // Ensure loading is false when we have articles
+  useEffect(() => {
+    if (savedArticles.length > 0 && loading) {
+      console.log('Found saved articles, setting loading to false');
+      setLoading(false);
+      setHasCachedContent(true);
+    }
+  }, [savedArticles, loading]);
 
   // Listen for navigation parameter changes (when articles are saved from other screens)
   useEffect(() => {
@@ -60,8 +133,10 @@ const SavedArticlesScreen = ({ navigation }: any) => {
       if (params?.refreshSaved) {
         // Clear the parameter to avoid repeated refreshes
         navigation.setParams({ refreshSaved: undefined });
-        // Force refresh saved articles
+        // Force refresh saved articles in background
         loadSavedArticles(true);
+        // Update last save time to track recent saves
+        setLastSaveTime(Date.now());
       }
     });
 
@@ -71,36 +146,80 @@ const SavedArticlesScreen = ({ navigation }: any) => {
   // Background refresh when screen comes into focus
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
-      // Always refresh saved articles when screen comes into focus
-      // This ensures newly saved articles appear immediately
-      if (hasCachedContent) {
-        // Check if we should refresh based on time or if there might be new saves
+      console.log('=== SAVED ARTICLES FOCUS LISTENER DEBUG ===');
+      console.log('hasCachedContent:', hasCachedContent);
+      console.log('loading:', loading);
+      console.log('savedArticles count:', savedArticles.length);
+      console.log('shouldRefreshContent():', shouldRefreshContent());
+      console.log('timeSinceLastSave:', Date.now() - lastSaveTime);
+      console.log('================================');
+      
+      // If we have articles, ensure loading is false and preserve content
+      if (savedArticles.length > 0) {
+        console.log('Setting loading to false from focus listener');
+        setLoading(false);
+        setHasCachedContent(true);
+        
+        // Smart refresh logic:
+        // 1. Refresh if content is stale (30+ minutes old)
+        // 2. Refresh if there might be new saves (within last 5 minutes)
         const now = Date.now();
         const timeSinceLastRefresh = now - lastRefreshTime;
         const timeSinceLastSave = now - lastSaveTime;
         
-        // Refresh if content is stale OR if there might be new saves (within last 5 minutes)
         if (timeSinceLastRefresh > CACHE_DURATION || timeSinceLastSave < 5 * 60 * 1000) {
-          loadSavedArticles(true); // Force refresh to get latest saved articles
+          console.log('Content is stale or recent saves detected, refreshing in background');
+          // Don't clear existing articles, just refresh in background
+          loadSavedArticles(true);
+        } else {
+          console.log('Content is fresh and no recent saves, skipping refresh');
         }
+      } else {
+        // If no articles, try to load from cache first
+        loadArticlesFromCache().then(cachedArticles => {
+          if (cachedArticles && cachedArticles.length > 0) {
+            console.log('Found cached articles on focus, setting them');
+            setSavedArticles(cachedArticles);
+            setHasCachedContent(true);
+            setLoading(false);
+          }
+        });
       }
     });
 
     return unsubscribe;
-  }, [navigation, hasCachedContent, lastRefreshTime, lastSaveTime]);
+  }, [navigation, hasCachedContent, lastRefreshTime, lastSaveTime, savedArticles]);
 
   const loadSavedArticles = async (forceRefresh = false) => {
     try {
-      // If we have cached content and it's not time to refresh, show cached content immediately
-      if (!forceRefresh && hasCachedContent && !shouldRefreshContent()) {
+      console.log('=== LOAD SAVED ARTICLES DEBUG ===');
+      console.log('forceRefresh:', forceRefresh);
+      console.log('hasCachedContent:', hasCachedContent);
+      console.log('shouldRefreshContent():', shouldRefreshContent());
+      console.log('isInitialLoad:', isInitialLoad);
+      console.log('loading:', loading);
+      console.log('savedArticles count:', savedArticles.length);
+      console.log('================================');
+
+      // If we have articles and it's not a forced refresh, show them immediately
+      if (!forceRefresh && savedArticles.length > 0) {
+        console.log('Using existing saved articles, setting loading to false');
         setLoading(false);
+        setHasCachedContent(true);
         return;
       }
 
-      // Only show loading on initial load or forced refresh
-      if (isInitialLoad || forceRefresh) {
+      // Only show loading on initial load or forced refresh, and only if we don't have content
+      if ((isInitialLoad || forceRefresh) && savedArticles.length === 0) {
+        console.log('Setting loading to true');
         setLoading(true);
+      } else if (forceRefresh && savedArticles.length > 0) {
+        // For background refreshes when we have content, don't show loading and preserve existing content
+        console.log('Background refresh with existing content, not showing loading');
+        setLoading(false);
+        // Don't clear the articles, just update them in the background
       }
+      
       setLoadError(null);
       
       const articles = await savedArticlesService.getSavedArticles();
@@ -111,6 +230,9 @@ const SavedArticlesScreen = ({ navigation }: any) => {
       setHasCachedContent(true);
       setIsInitialLoad(false);
       setLoading(false);
+      
+      // Cache the articles
+      await saveArticlesToCache(articles);
     } catch (error) {
       console.error('Error loading saved articles:', error);
       setLoadError('Failed to load saved articles');
@@ -135,6 +257,14 @@ const SavedArticlesScreen = ({ navigation }: any) => {
           style: 'destructive',
           onPress: async () => {
             try {
+              // Optimistically update UI first
+              const updatedArticles = savedArticles.filter(article => article.content_item_id !== articleId);
+              setSavedArticles(updatedArticles);
+              
+              // Update cache immediately
+              await saveArticlesToCache(updatedArticles);
+              
+              // Then remove from database
               const { error } = await supabase
                 .from('saved_articles')
                 .delete()
@@ -143,12 +273,14 @@ const SavedArticlesScreen = ({ navigation }: any) => {
               if (error) {
                 console.error('Error removing saved article:', error);
                 Alert.alert('Error', 'Failed to remove article');
-              } else {
-                setSavedArticles(prev => prev.filter(article => article.content_item_id !== articleId));
+                // Revert UI if database operation failed
+                setSavedArticles(savedArticles);
               }
             } catch (error) {
               console.error('Error removing saved article:', error);
               Alert.alert('Error', 'Failed to remove article');
+              // Revert UI if operation failed
+              setSavedArticles(savedArticles);
             }
           },
         },
@@ -168,16 +300,20 @@ const SavedArticlesScreen = ({ navigation }: any) => {
       if (supported) {
         setCurrentArticle(article);
         setShowArticleViewer(true);
-        // Mark the article as read
-        await savedArticlesService.markAsRead(article.content_item_id);
-        // Update UI state
-        setSavedArticles(prev => 
-          prev.map(item => 
-            item.content_item_id === article.content_item_id 
-              ? { ...item, read_at: new Date().toISOString() }
-              : item
-          )
+        
+        // Optimistically update UI first
+        const updatedArticles = savedArticles.map(item => 
+          item.content_item_id === article.content_item_id 
+            ? { ...item, read_at: new Date().toISOString() }
+            : item
         );
+        setSavedArticles(updatedArticles);
+        
+        // Update cache immediately
+        await saveArticlesToCache(updatedArticles);
+        
+        // Then mark as read in database
+        await savedArticlesService.markAsRead(article.content_item_id);
       } else {
         Alert.alert('Error', 'Cannot open this URL');
       }
@@ -189,20 +325,26 @@ const SavedArticlesScreen = ({ navigation }: any) => {
 
   const handleSaveArticle = async (article: SavedArticle) => {
     try {
-      // Since this is already a saved article, we'll remove it from saved
-      await savedArticlesService.unsaveArticle(article.content_item_id);
+      // Optimistically update UI first
+      const updatedArticles = savedArticles.filter(item => item.content_item_id !== article.content_item_id);
+      setSavedArticles(updatedArticles);
       
-      // Update UI state
-      setSavedArticles(prev => prev.filter(item => item.content_item_id !== article.content_item_id));
+      // Update cache immediately
+      await saveArticlesToCache(updatedArticles);
       
       // Close the article viewer
       setShowArticleViewer(false);
       setCurrentArticle(null);
       
+      // Then unsave from database
+      await savedArticlesService.unsaveArticle(article.content_item_id);
+      
       Alert.alert('Success', 'Article removed from saved items');
     } catch (error) {
       console.error('Error removing saved article:', error);
       Alert.alert('Error', 'Failed to remove article from saved items');
+      // Revert UI if operation failed
+      setSavedArticles(savedArticles);
     }
   };
 

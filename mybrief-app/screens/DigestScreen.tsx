@@ -66,7 +66,7 @@ const DigestScreen = ({ navigation }: any) => {
   const [readArticles, setReadArticles] = useState<Set<string>>(new Set());
   const [articleViewerVisible, setArticleViewerVisible] = useState(false);
   const [savedUnreadArticles, setSavedUnreadArticles] = useState<SavedArticle[]>([]);
-  const [availableCategories, setAvailableCategories] = useState<string[]>(['All']);
+  const [availableCategories, setAvailableCategories] = useState<string[]>(['All', 'Technology', 'Business', 'News', 'Communities']);
   
   // Collapsible UI states
   const [filtersVisible, setFiltersVisible] = useState(false);
@@ -82,7 +82,16 @@ const DigestScreen = ({ navigation }: any) => {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [hasCachedContent, setHasCachedContent] = useState(false);
 
+  // Add category caching state
+  const [categoriesLastUpdated, setCategoriesLastUpdated] = useState<number>(0);
+  const [isRefreshingCategories, setIsRefreshingCategories] = useState(false);
+  const CATEGORY_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
+  const shouldRefreshCategories = () => {
+    const now = Date.now();
+    const timeSinceLastUpdate = now - categoriesLastUpdated;
+    return timeSinceLastUpdate > CATEGORY_CACHE_DURATION;
+  };
 
   // Cache duration: 2 hours in milliseconds
   const CACHE_DURATION = 2 * 60 * 60 * 1000;
@@ -211,6 +220,7 @@ const DigestScreen = ({ navigation }: any) => {
       console.log('loading:', loading);
       console.log('digest exists:', !!digest);
       console.log('shouldRefreshContent():', shouldRefreshContent());
+      console.log('shouldRefreshCategories():', shouldRefreshCategories());
       console.log('================================');
       
       // If we have digest content, ensure loading is false and preserve content
@@ -224,8 +234,13 @@ const DigestScreen = ({ navigation }: any) => {
           // Don't clear existing digest, just refresh in background
           loadTodayDigest(true);
         }
-        // Always refresh categories when screen comes into focus
-        refreshCategories();
+        // Only refresh categories if cache is expired
+        if (shouldRefreshCategories()) {
+          console.log('Categories cache expired, refreshing categories');
+          refreshCategories();
+        } else {
+          console.log('Categories cache is still valid, skipping refresh');
+        }
       } else {
         // If no digest, try to load from cache first
         loadDigestFromCache().then(cachedDigest => {
@@ -240,7 +255,7 @@ const DigestScreen = ({ navigation }: any) => {
     });
 
     return unsubscribe;
-  }, [navigation, hasCachedContent, lastRefreshTime, digest]);
+  }, [navigation, hasCachedContent, lastRefreshTime, digest, categoriesLastUpdated]);
 
   const loadReadArticles = async () => {
     try {
@@ -276,11 +291,29 @@ const DigestScreen = ({ navigation }: any) => {
 
   const refreshCategories = async () => {
     try {
+      // Prevent multiple simultaneous refreshes
+      if (isRefreshingCategories) {
+        console.log('Categories refresh already in progress, skipping');
+        return;
+      }
+      
+      // Only refresh categories if cache is expired
+      if (!shouldRefreshCategories()) {
+        console.log('Categories cache is still valid, skipping refresh');
+        return;
+      }
+      
+      console.log('Refreshing categories...');
+      setIsRefreshingCategories(true);
+      
       // Get content items to determine categories
       const contentItems = getContentItems();
       await determineAvailableCategories(contentItems);
+      setCategoriesLastUpdated(Date.now());
     } catch (error) {
       console.error('Error refreshing categories:', error);
+    } finally {
+      setIsRefreshingCategories(false);
     }
   };
 
@@ -302,39 +335,42 @@ const DigestScreen = ({ navigation }: any) => {
       }
     });
     
-    // Also check user's active feeds to include categories even if no content yet
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: userFeeds } = await supabase
-          .from('user_feeds')
-          .select(`
-            feed_sources (
-              category,
-              type
-            )
-          `)
-          .eq('user_id', user.id)
-          .eq('is_active', true);
+    // Only check user's active feeds if we don't have enough categories from content
+    // This reduces database queries significantly
+    if (allCategories.size <= 2) { // Only 'All' and maybe one other category
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: userFeeds } = await supabase
+            .from('user_feeds')
+            .select(`
+              feed_sources (
+                category,
+                type
+              )
+            `)
+            .eq('user_id', user.id)
+            .eq('is_active', true);
 
-        if (userFeeds) {
-          userFeeds.forEach(userFeed => {
-            const feedCategory = (userFeed.feed_sources as any)?.category;
-            const feedType = (userFeed.feed_sources as any)?.type;
-            
-            if (feedCategory && feedCategory !== 'General') {
-              allCategories.add(feedCategory);
-            }
-            
-            // Special handling for Communities category
-            if (['reddit', 'twitter', 'social'].includes(feedType || '')) {
-              allCategories.add('Communities');
-            }
-          });
+          if (userFeeds) {
+            userFeeds.forEach(userFeed => {
+              const feedCategory = (userFeed.feed_sources as any)?.category;
+              const feedType = (userFeed.feed_sources as any)?.type;
+              
+              if (feedCategory && feedCategory !== 'General') {
+                allCategories.add(feedCategory);
+              }
+              
+              // Special handling for Communities category
+              if (['reddit', 'twitter', 'social'].includes(feedType || '')) {
+                allCategories.add('Communities');
+              }
+            });
+          }
         }
+      } catch (error) {
+        console.error('Error fetching user feeds for categories:', error);
       }
-    } catch (error) {
-      console.error('Error fetching user feeds for categories:', error);
     }
     
     // Convert to array and sort
