@@ -437,5 +437,67 @@ export const savedArticlesService = {
       console.error('Error in getSavedArticleIds:', error);
       return new Set();
     }
+  },
+
+  // Get saved but unread articles for reminders
+  async getSavedUnreadArticles(limit: number = 3): Promise<SavedArticle[]> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.error('User not authenticated');
+        return [];
+      }
+
+      console.log('=== FETCHING SAVED UNREAD ARTICLES ===');
+      
+      const { data: savedUnreadArticles, error } = await supabase
+        .from('saved_articles')
+        .select(`
+          *,
+          content_items (
+            id,
+            title,
+            url,
+            description,
+            image_url,
+            published_at,
+            content_type,
+            feed_sources (
+              name,
+              type
+            ),
+            author,
+            score,
+            num_comments,
+            subreddit,
+            permalink,
+            is_self,
+            domain
+          )
+        `)
+        .eq('user_id', user.id)
+        .not('saved_at', 'is', null) // Only get articles that are properly saved
+        .is('read_at', null) // Only get unread articles
+        .order('saved_at', { ascending: false }) // Most recently saved first
+        .limit(limit);
+
+      if (error) {
+        console.error('Error fetching saved unread articles:', error);
+        return [];
+      }
+
+      console.log('Fetched saved unread articles:', savedUnreadArticles?.length || 0);
+      
+      // Map the data to match the interface structure
+      const mappedArticles = (savedUnreadArticles || []).map(article => ({
+        ...article,
+        content_data: article.content_items // Map content_items to content_data
+      }));
+      
+      return mappedArticles;
+    } catch (error) {
+      console.error('Error in getSavedUnreadArticles:', error);
+      return [];
+    }
   }
 }; 

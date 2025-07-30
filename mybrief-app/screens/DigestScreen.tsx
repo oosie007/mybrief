@@ -23,7 +23,7 @@ import { LoadingState, ErrorState, NoDigestState, SkeletonLoadingState } from '.
 import { aggregateUserContent, debugContent } from '../lib/digestGenerator';
 import { getFeedSourceFavicon } from '../lib/faviconService';
 import ArticleViewer from '../components/ArticleViewer';
-import { savedArticlesService } from '../lib/savedArticlesService';
+import { savedArticlesService, SavedArticle } from '../lib/savedArticlesService';
 import { cleanContentForDisplay, cleanTitle } from '../lib/contentCleaner';
 import SharedLayout from '../components/SharedLayout';
 
@@ -65,6 +65,8 @@ const DigestScreen = ({ navigation }: any) => {
   const [savedArticles, setSavedArticles] = useState<Set<string>>(new Set());
   const [readArticles, setReadArticles] = useState<Set<string>>(new Set());
   const [articleViewerVisible, setArticleViewerVisible] = useState(false);
+  const [savedUnreadArticles, setSavedUnreadArticles] = useState<SavedArticle[]>([]);
+  const [availableCategories, setAvailableCategories] = useState<string[]>(['All']);
   
   // Collapsible UI states
   const [filtersVisible, setFiltersVisible] = useState(false);
@@ -80,7 +82,7 @@ const DigestScreen = ({ navigation }: any) => {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [hasCachedContent, setHasCachedContent] = useState(false);
 
-  const categories = ['All', 'Technology', 'Business', 'Startups', 'Productivity', 'News', 'Communities', 'Science', 'Health', 'Finance', 'Entertainment', 'Education', 'Politics', 'Sports', 'Lifestyle'];
+
 
   // Cache duration: 2 hours in milliseconds
   const CACHE_DURATION = 2 * 60 * 60 * 1000;
@@ -179,6 +181,7 @@ const DigestScreen = ({ navigation }: any) => {
       loadTodayDigest();
       loadSavedArticles();
       loadReadArticles();
+      loadSavedUnreadArticles();
     };
     
     initializeScreen();
@@ -192,6 +195,13 @@ const DigestScreen = ({ navigation }: any) => {
       setHasCachedContent(true);
     }
   }, [digest, loading]);
+
+  // Reset active category if it's not available
+  useEffect(() => {
+    if (availableCategories.length > 0 && !availableCategories.includes(activeCategory)) {
+      setActiveCategory('All');
+    }
+  }, [availableCategories, activeCategory]);
 
   // Background refresh when screen comes into focus
   useEffect(() => {
@@ -214,6 +224,8 @@ const DigestScreen = ({ navigation }: any) => {
           // Don't clear existing digest, just refresh in background
           loadTodayDigest(true);
         }
+        // Always refresh categories when screen comes into focus
+        refreshCategories();
       } else {
         // If no digest, try to load from cache first
         loadDigestFromCache().then(cachedDigest => {
@@ -250,6 +262,99 @@ const DigestScreen = ({ navigation }: any) => {
       setReadArticles(readIds);
     } catch (error) {
       console.error('Error loading read articles:', error);
+    }
+  };
+
+  const loadSavedUnreadArticles = async () => {
+    try {
+      const articles = await savedArticlesService.getSavedUnreadArticles(3);
+      setSavedUnreadArticles(articles);
+    } catch (error) {
+      console.error('Error loading saved unread articles:', error);
+    }
+  };
+
+  const refreshCategories = async () => {
+    try {
+      // Get content items to determine categories
+      const contentItems = getContentItems();
+      await determineAvailableCategories(contentItems);
+    } catch (error) {
+      console.error('Error refreshing categories:', error);
+    }
+  };
+
+  const determineAvailableCategories = async (contentItems: ContentItem[]) => {
+    const allCategories = new Set<string>(['All']);
+    
+    // Extract categories from content items
+    contentItems.forEach(item => {
+      const feedCategory = item.feed_sources?.category || item.category;
+      console.log(`Content item "${item.title}" - Feed category: ${feedCategory}, Content type: ${item.content_type}`);
+      
+      if (feedCategory && feedCategory !== 'General') {
+        allCategories.add(feedCategory);
+      }
+      
+      // Special handling for Communities category
+      if (['reddit', 'twitter', 'social'].includes(item.content_type)) {
+        allCategories.add('Communities');
+      }
+    });
+    
+    // Also check user's active feeds to include categories even if no content yet
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: userFeeds } = await supabase
+          .from('user_feeds')
+          .select(`
+            feed_sources (
+              category,
+              type
+            )
+          `)
+          .eq('user_id', user.id)
+          .eq('is_active', true);
+
+        if (userFeeds) {
+          userFeeds.forEach(userFeed => {
+            const feedCategory = (userFeed.feed_sources as any)?.category;
+            const feedType = (userFeed.feed_sources as any)?.type;
+            
+            if (feedCategory && feedCategory !== 'General') {
+              allCategories.add(feedCategory);
+            }
+            
+            // Special handling for Communities category
+            if (['reddit', 'twitter', 'social'].includes(feedType || '')) {
+              allCategories.add('Communities');
+            }
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching user feeds for categories:', error);
+    }
+    
+    // Convert to array and sort
+    const categories = Array.from(allCategories).sort((a, b) => {
+      if (a === 'All') return -1;
+      if (b === 'All') return 1;
+      return a.localeCompare(b);
+    });
+    
+    // Ensure we always have at least 'All' category
+    if (categories.length === 0) {
+      categories.push('All');
+    }
+    
+    console.log('Available categories:', categories);
+    setAvailableCategories(categories);
+    
+    // If current active category is not available, reset to 'All'
+    if (!categories.includes(activeCategory)) {
+      setActiveCategory('All');
     }
   };
 
@@ -403,6 +508,9 @@ const DigestScreen = ({ navigation }: any) => {
         };
         setDigest(mockDigest);
         await saveDigestToCache(mockDigest);
+        // Determine available categories from demo content
+        const demoContentItems: ContentItem[] = Object.values(mockContentMap);
+        await determineAvailableCategories(demoContentItems);
       } else {
         // Create digest from real content
         const mockDigest: StoredDigest = {
@@ -428,6 +536,28 @@ const DigestScreen = ({ navigation }: any) => {
         };
         setDigest(mockDigest);
         await saveDigestToCache(mockDigest);
+        // Determine available categories from real content
+        const mappedContentItems: ContentItem[] = contentItems.map(item => ({
+          id: item.id,
+          title: item.title,
+          url: item.url,
+          summary: item.description,
+          relevanceScore: 0,
+          category: item.feed_sources?.category || 'General',
+          keyPoints: [],
+          estimatedReadTime: 3,
+          content_type: item.content_type,
+          feed_sources: item.feed_sources,
+          published_at: item.published_at,
+          author: item.author,
+          score: item.score,
+          num_comments: item.num_comments,
+          subreddit: item.subreddit,
+          permalink: item.permalink,
+          is_self: item.is_self,
+          domain: item.domain
+        }));
+        await determineAvailableCategories(mappedContentItems);
       }
 
       // Update cache state
@@ -529,6 +659,7 @@ const DigestScreen = ({ navigation }: any) => {
     await loadTodayDigest(true); // Force refresh
     await loadSavedArticles();
     await loadReadArticles();
+    await loadSavedUnreadArticles();
     setRefreshing(false);
   };
 
@@ -556,6 +687,8 @@ const DigestScreen = ({ navigation }: any) => {
           });
           // Trigger refresh of saved articles screen
           navigation.setParams({ refreshSaved: Date.now() });
+          // Refresh saved unread articles
+          loadSavedUnreadArticles();
         } else {
           console.error('Failed to remove article from saved items');
         }
@@ -566,6 +699,8 @@ const DigestScreen = ({ navigation }: any) => {
           setSavedArticles(prev => new Set([...prev, article.id]));
           // Trigger refresh of saved articles screen
           navigation.setParams({ refreshSaved: Date.now() });
+          // Refresh saved unread articles
+          loadSavedUnreadArticles();
         } else {
           console.error('Failed to save article');
         }
@@ -648,6 +783,8 @@ const DigestScreen = ({ navigation }: any) => {
         await savedArticlesService.markAsRead(article.id);
         // Update UI state
         setReadArticles(prev => new Set([...prev, article.id]));
+        // Refresh saved unread articles since this article is now read
+        loadSavedUnreadArticles();
       } else {
         Alert.alert('Error', 'Cannot open this URL');
       }
@@ -717,7 +854,7 @@ const DigestScreen = ({ navigation }: any) => {
     return date.toLocaleDateString();
   };
 
-  const ContentCard = ({ item }: { item: any }) => {
+  const ContentCard = ({ item, isReminder = false }: { item: any; isReminder?: boolean }) => {
     const isSaved = savedArticles.has(item.id);
     const isRead = readArticles.has(item.id);
     
@@ -744,7 +881,8 @@ const DigestScreen = ({ navigation }: any) => {
         style={[
           styles.contentCard, 
           { backgroundColor: theme.cardBg, borderColor: theme.border },
-          isRead && { opacity: 0.7 } // Dim read articles slightly
+          isRead && { opacity: 0.7 }, // Dim read articles slightly
+          isReminder && { borderLeftWidth: 4, borderLeftColor: theme.accent } // Highlight reminder cards
         ]} 
         onPress={() => handleOpenArticle(item)}
       >
@@ -849,7 +987,7 @@ const DigestScreen = ({ navigation }: any) => {
     );
   };
 
-  const YouTubeCard = ({ item }: { item: any }) => {
+  const YouTubeCard = ({ item, isReminder = false }: { item: any; isReminder?: boolean }) => {
     const isSaved = savedArticles.has(item.id);
     const isRead = readArticles.has(item.id);
     
@@ -858,7 +996,8 @@ const DigestScreen = ({ navigation }: any) => {
         style={[
           styles.contentCard, 
           { backgroundColor: theme.cardBg, borderColor: theme.border },
-          isRead && { opacity: 0.7 }
+          isRead && { opacity: 0.7 },
+          isReminder && { borderLeftWidth: 4, borderLeftColor: theme.accent } // Highlight reminder cards
         ]} 
         onPress={() => handleOpenArticle(item)}
       >
@@ -1090,7 +1229,7 @@ const DigestScreen = ({ navigation }: any) => {
         searchPlaceholder="Search articles..."
         activeCategory={activeCategory}
         onCategoryChange={setActiveCategory}
-        categories={categories}
+        categories={availableCategories}
         showFilters={true}
       >
         {/* Content */}
@@ -1157,6 +1296,51 @@ const DigestScreen = ({ navigation }: any) => {
                   {videoPosts.map((item, index) => (
                     <YouTubeCard key={item.id || index} item={item} />
                   ))}
+                </View>
+              )}
+
+              {/* Reminder Section */}
+              {savedUnreadArticles.length > 0 && (
+                <View style={styles.section}>
+                  <View style={styles.sectionHeader}>
+                    <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                      Reminders
+                    </Text>
+                    <Text style={[styles.sectionSubtitle, { color: theme.textMuted }]}>
+                      {savedUnreadArticles.length} saved articles to read
+                    </Text>
+                  </View>
+                  {savedUnreadArticles.map((savedArticle, index) => {
+                    const contentItem: ContentItem = {
+                      id: savedArticle.content_data?.id || savedArticle.content_item_id,
+                      title: savedArticle.content_data?.title || 'Untitled',
+                      url: savedArticle.content_data?.url || '',
+                      summary: savedArticle.content_data?.description || '',
+                      relevanceScore: 0,
+                      category: 'Reminder',
+                      keyPoints: [],
+                      estimatedReadTime: 3,
+                      content_type: savedArticle.content_data?.content_type || 'rss',
+                      feed_sources: savedArticle.content_data?.feed_sources || {
+                        name: 'Unknown',
+                        type: 'rss'
+                      },
+                      published_at: savedArticle.content_data?.published_at || '',
+                      author: savedArticle.content_data?.author || '',
+                      score: savedArticle.content_data?.score || 0,
+                      num_comments: savedArticle.content_data?.num_comments || 0,
+                      subreddit: savedArticle.content_data?.subreddit || '',
+                      permalink: savedArticle.content_data?.permalink || '',
+                      is_self: savedArticle.content_data?.is_self || false,
+                      domain: savedArticle.content_data?.domain || ''
+                    };
+
+                    return savedArticle.content_data?.content_type === 'youtube' ? (
+                      <YouTubeCard key={savedArticle.id || index} item={contentItem} isReminder={true} />
+                    ) : (
+                      <ContentCard key={savedArticle.id || index} item={contentItem} isReminder={true} />
+                    );
+                  })}
                 </View>
               )}
             </>
